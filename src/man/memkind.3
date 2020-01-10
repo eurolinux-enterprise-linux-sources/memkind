@@ -48,10 +48,6 @@ This header expose EXPERIMENTAL API in except of STANDARD API placed in section 
 .BI "void memkind_free(memkind_t " "kind" ", void " "*ptr" );
 .br
 .sp
-.B "ALLOCATOR CALLBACK FUNCTION:"
-.br
-.BI "void *memkind_partition_mmap(int " "partition" ", void " "*addr" ", size_t " "size" ); (DEPRECATED)
-.sp
 .B "KIND MANAGMENT:"
 .br
 .BI "int memkind_create_pmem(const char " "*dir" ", size_t " "max_size" ", memkind_t " "*kind" );
@@ -235,30 +231,6 @@ specified to
 but this will require a look up that can be bypassed by specifying
 a non-zero value.
 .sp
-.B "ALLOCATOR CALLBACK FUNCTION:"
-.br
-This section describes the memkind interface which is used internally
-by the heap manager.  For this API the kind is determined by the
-partition index.  This enables the underlying heap manager to call
-routines with standard type arguments, and allows the heap manager
-implementation to be independent of the specifics of the
-.I memkind_t
-implementation.  Currently there is only one callback function.
-.PP
-.BR memkind_partition_mmap ()
-which is a wrapper around the
-.BR mmap (2)
-system call.  The hint address
-.I addr
-and the length in bytes of the buffer to be
-allocated
-.I size
-are passed through to
-.BR mmap (2).
-The other
-.BR mmap (2)
-parameters are determined by the kind operations.
-.sp
 .B "KIND MANAGEMENT:"
 .br
 There are built-in kinds that are always available, and these are enumerated in the
@@ -362,212 +334,6 @@ API standards:
 -EXPERIMENTAL API, API is considered as unstable and the subject to change
 .br
 .sp
-.B "MEMKIND OPERATIONS:"
-.br
-The
-.I memkind_ops
-structure is a vtable that defines the operations which determine the
-kind of memory.  This design pattern is modeled after the "mix-in"
-pattern used in the Linux kernel to enable some of the features of an
-object oriented language in C.  This section defines the inputs,
-outputs and responsibilities of each function pointer enumerated in the
-.I memkind_ops
-structure.  Each of these methods takes a
-.B memkind_t
-argument as its first parameter which shall be self referencing.  In this
-documentation the function pointers in the
-.I memkind_ops
-structure will be prepended with
-.RB """" ops. """"
-and should be considered the operation associated with the
-.IR kind .
-.PP
-.BI "int ops.create(memkind_t " "kind" ", struct memkind_ops " "*ops" ", const char " "*name" );
-.br
-shall instantiate all of the dynamic resources associated with the
-.IR kind .
-It takes a pointer to the vtable structure
-.I ops
-which has a function pointer for each of methods defined in this section
-of the man page.  If any methods are unnecessary to the implementation of
-the
-.I kind
-these function pointers shall be set to
-.BR NULL .
-The
-.I name
-string is an input parameter that identifies the kind of memory so
-that it can be fetched with the
-.BR memkind_get_kind_by_name ()
-function.  Typically this method is either a pointer to the function
-.BR memkind_default_create ()
-defined in
-.IR <memkind_default.h> ,
-or a function that calls
-.BR memkind_default_create ()
-before performing other setup.
-.PP
-.BI "int ops.destroy(memkind_t " "kind" );
-.br
-shall free all of the dynamic resources reserved by the
-.BR ops.create ()
-method.  If no dynamic resources were explicitly allocated in the
-.IR ops.create ()
-method, this pointer can be set to
-.BR NULL .
-.PP
-.BI "void *ops.malloc(memkind_t " "kind" ", size_t " "size" );
-.br
-shall implement
-.BR memkind_malloc (),
-as described above.
-.PP
-.BI "void *ops.calloc(memkind_t " "kind" ", size_t " "num" ", size_t " "size" );
-.br
-shall implement
-.BR memkind_calloc (),
-as described above.
-.PP
-.BI "int ops.posix_memalign(memkind_t " "kind" ", void " "**memptr" ", size_t " "alignment" ", size_t " "size" );
-.br
-shall implement
-.BR memkind_posix_memalign (),
-as described above.
-.PP
-.BI "void *ops.realloc(memkind_t " "kind" ", void " "*ptr" ", size_t " "size" );
-.br
-shall implement
-.BR memkind_realloc (),
-as described above.
-.PP
-.BI "void ops.free(memkind_t " "kind" ", void " "*ptr" );
-.br
-shall implement
-.BR memkind_free (),
-as described above.
-.PP
-.BI "void *ops.mmap(memkind_t " "kind" ", void " "*addr" ", size_t " "size" );
-shall wrap the
-.BR mmap (2)
-.BR mbind (2)
-and
-.BR madvise (2)
-system calls while passing
-.I addr
-and
-.I size
-through and determining all other parameters for
-.BR mmap (2)
-.BR mbind (2)
-and
-.BR madvise (2)
-by calling other functions resolved by the
-.B kind.ops
-vtable.
-This function shall return a virtual address to the memory mapped, or
-.B MAP_FAILED
-as defined in
-.I <sys/mman.h>
-which is
-.IR "(void *) -1" .
-.PP
-.BI "int ops.mbind(memkind_t " "kind" ", void " "*ptr" ", size_t " "size" );
-.br
-shall wrap the
-.BR mbind (2)
-system call and pass through
-the start address
-.I ptr
-to be bound, and the number of bytes
-.I size
-from that address to be bound.  The other parameters to
-.BR mbind (2)
-shall be determined by calling other functions resolved by the
-.B kind.ops
-vtable.
-.PP
-.BI "int ops.madvise(memkind_t " "kind" ", void " "*addr" ", size_t " "size" );
-.br
-shall wrap the
-.BR madvise (2)
-system call and pass through
-the start address
-.I addr
-to be advised, and the number of bytes
-.I size
-from that address to be advised.  This may call
-.BR madvise (2)
-multiple times with different advice.
-.PP
-.BI "int ops.get_mmap_flags(memkind_t " "kind" ", int " "*flags" );
-.br
-shall set
-.I flags
-to a value appropriate for passing to the
-.IR mmap (2)
-system call for the
-.IR kind .
-.PP
-.BI "int ops.get_mbind_mode(memkind_t " "kind" ", int " "*mode" );
-.br
-shall set
-.I mode
-to a value appropriate for passing to the
-.IR mmap (2)
-system call for the
-.IR kind .
-.PP
-.BI "int ops.get_mbind_nodemask(memkind_t " "kind" ", unsigned long " "*nodemask" ", unsigned long " "maxnode" );
-.br
-shall set the
-.I nodemask
-of length
-.I maxnode
-bits to a value appropriate for passing to the
-.IR mbind (2)
-system call for the
-.IR kind .
-.PP
-.BI "int ops.get_arena(memkind_t " "kind" ", unsigned int " "*arena"," " size_t " "size" );
-.br
-shall set
-.I arena
-to an index appropriate for the
-.I kind,
-allocation
-.I size,
-and CPU when using the jemalloc arena allocation through the
-.BR jemk_mallocx ()
-API. Size parameter is not used at the moment, but will be necessary for integration with jemalloc 4.0.x (planned for one of the future releases).
-.PP
-.BI "int ops.get_size(memkind_t " "kind" ", size_t " "*total" ", size_t " "*free" );
-.br
-shall implement
-.BR memkind_get_size (),
-as described above.
-.PP
-.BI "int ops.check_available(memkind_t " "kind" );
-.br
-shall return 0 if the
-.I kind
-is available on the system, and an error code if not.
-.PP
-.BI "int ops.check_addr(memkind_t " "kind" ", void " "*addr" ); (DEPRECATED)
-.br
-shall return 0 if the
-.I addr
-can be freed with the specified
-.I kind
-and an error code otherwise.  If the memory cannot be freed with
-.BR jemk_free (),
-then at least one of the instantiated kinds must return 0 to enable
-freeing.
-.PP
-.BI "void ops.init_once(void);"
-.br
-this function pointer shall be set to NULL for any kind that is not
-built-in.  The method is used to allocate dynamic resources for
-built-in kinds without requiring and initialization routine.
 .SH "RETURN VALUE"
 .BR memkind_calloc (),
 .BR memkind_malloc (),
@@ -608,10 +374,23 @@ of allocation. If there is not enough high bandwidth memory to satisfy the reque
 .I errno
 is set to ENOMEM and the allocated pointer is set to NULL.
 .TP
+.B MEMKIND_HBW_ALL
+Same as
+.B MEMKIND_HBW
+except decision regarding closest NUMA node is postponed until the time of first write.
+.TP
 .B MEMKIND_HBW_HUGETLB
 Same as
 .B MEMKIND_HBW
 except the allocation is backed by huge pages. Note: This kind requires
+huge pages configuration described in SYSTEM CONFIGURATION section.
+.TP
+.B MEMKIND_HBW_ALL_HUGETLB
+Combination of
+.B MEMKIND_HBW_ALL
+and
+.B MEMKIND_HBW_HUGETLB
+properties. Note: This kind requires
 huge pages configuration described in SYSTEM CONFIGURATION section.
 .TP
 .B MEMKIND_HBW_PREFERRED
@@ -649,6 +428,10 @@ Same as
 except that the pages that support the allocation are interleaved
 across all high bandwidth nodes and transparent huge pages are
 disabled.
+.TP
+.B MEMKIND_REGULAR
+Allocate from regular memory using the default page size. Regular means general purpose memory
+from the NUMA nodes containing CPUs.
 .SH "ERRORS"
 .TP
 .BR memkind_posix_memalign ()
@@ -689,35 +472,14 @@ Call to
 .BR mmap (2)
 failed
 .TP
-.B MEMKIND_ERROR_MEMALIGN (DEPRECATED)
-Call to
-.BR jemk_posix_memalign ()
-failed
-.TP
-.B MEMKIND_ERROR_MALLCTL (DEPRECATED)
-Call to
-.BR jemk_mallctl ()
-failed
-.TP
 .B MEMKIND_ERROR_MALLOC
-Call to
-.BR jemk_malloc ()
+Call to jemalloc's
+.BR malloc ()
 failed
-.TP
-.B MEMKIND_ERROR_GETCPU (DEPRECATED)
-Call to
-.BR sched_getcpu ()
-returned out of range
-.TP
-.B MEMKIND_ERROR_TIEDISTANCE (DEPRECATED)
-Two NUMA memory nodes are equidistant from target cpu node
-.TP
-.B MEMKIND_ERROR_ALIGNMENT (DEPRECATED)
-Alignment must be a power of two and larger than sizeof(void *)
 .TP
 .B MEMKIND_ERROR_ALLOCM
-Call to
-.BR jemk_allocm ()
+Call to jemalloc's
+.BR allocm ()
 failed
 .TP
 .B MEMKIND_ERROR_ENVIRON

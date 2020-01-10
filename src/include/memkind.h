@@ -223,6 +223,9 @@ int memkind_destroy_kind(memkind_t kind);
 #include "memkind_deprecated.h"
 
 /* EXPERIMENTAL API */
+extern memkind_t MEMKIND_REGULAR;
+
+/* EXPERIMENTAL API */
 extern memkind_t MEMKIND_DEFAULT;
 
 /* EXPERIMENTAL API */
@@ -232,10 +235,16 @@ extern memkind_t MEMKIND_HUGETLB;
 extern memkind_t MEMKIND_HBW;
 
 /* EXPERIMENTAL API */
+extern memkind_t MEMKIND_HBW_ALL;
+
+/* EXPERIMENTAL API */
 extern memkind_t MEMKIND_HBW_PREFERRED;
 
 /* EXPERIMENTAL API */
 extern memkind_t MEMKIND_HBW_HUGETLB;
+
+/* EXPERIMENTAL API */
+extern memkind_t MEMKIND_HBW_ALL_HUGETLB;
 
 /* EXPERIMENTAL API */
 extern memkind_t MEMKIND_HBW_PREFERRED_HUGETLB;

@@ -22,7 +22,7 @@
  * ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 #define MEMKIND_VERSION_MAJOR 1
-#define MEMKIND_VERSION_MINOR 5
+#define MEMKIND_VERSION_MINOR 7
 #define MEMKIND_VERSION_PATCH 0
 
 #include <memkind.h>
@@ -30,6 +30,7 @@
 #include <memkind/internal/memkind_hugetlb.h>
 #include <memkind/internal/memkind_arena.h>
 #include <memkind/internal/memkind_hbw.h>
+#include <memkind/internal/memkind_regular.h>
 #include <memkind/internal/memkind_gbtlb.h>
 #include <memkind/internal/memkind_pmem.h>
 #include <memkind/internal/memkind_interleave.h>
@@ -90,6 +91,13 @@ static struct memkind MEMKIND_HBW_STATIC = {
     .init_once = PTHREAD_ONCE_INIT,
 };
 
+static struct memkind MEMKIND_HBW_ALL_STATIC = {
+    .ops = &MEMKIND_HBW_ALL_OPS,
+    .partition = MEMKIND_PARTITION_HBW_ALL,
+    .name = "memkind_hbw_all",
+    .init_once = PTHREAD_ONCE_INIT,
+};
+
 static struct memkind MEMKIND_HBW_PREFERRED_STATIC = {
     .ops = &MEMKIND_HBW_PREFERRED_OPS,
     .partition = MEMKIND_PARTITION_HBW_PREFERRED,
@@ -101,6 +109,13 @@ static struct memkind MEMKIND_HBW_HUGETLB_STATIC = {
     .ops = &MEMKIND_HBW_HUGETLB_OPS,
     .partition = MEMKIND_PARTITION_HBW_HUGETLB,
     .name = "memkind_hbw_hugetlb",
+    .init_once = PTHREAD_ONCE_INIT,
+};
+
+static struct memkind MEMKIND_HBW_ALL_HUGETLB_STATIC = {
+    .ops = &MEMKIND_HBW_ALL_HUGETLB_OPS,
+    .partition = MEMKIND_PARTITION_HBW_ALL_HUGETLB,
+    .name = "memkind_hbw_all_hugetlb",
     .init_once = PTHREAD_ONCE_INIT,
 };
 
@@ -139,17 +154,27 @@ static struct memkind MEMKIND_HBW_INTERLEAVE_STATIC = {
     .init_once = PTHREAD_ONCE_INIT,
 };
 
+static struct memkind MEMKIND_REGULAR_STATIC = {
+    .ops = &MEMKIND_REGULAR_OPS,
+    .partition = MEMKIND_PARTITION_REGULAR,
+    .name = "memkind_regular",
+    .init_once = PTHREAD_ONCE_INIT,
+};
+
 MEMKIND_EXPORT struct memkind *MEMKIND_DEFAULT = &MEMKIND_DEFAULT_STATIC;
 MEMKIND_EXPORT struct memkind *MEMKIND_HUGETLB = &MEMKIND_HUGETLB_STATIC;
 MEMKIND_EXPORT struct memkind *MEMKIND_INTERLEAVE = &MEMKIND_INTERLEAVE_STATIC;
 MEMKIND_EXPORT struct memkind *MEMKIND_HBW = &MEMKIND_HBW_STATIC;
+MEMKIND_EXPORT struct memkind *MEMKIND_HBW_ALL = &MEMKIND_HBW_ALL_STATIC;
 MEMKIND_EXPORT struct memkind *MEMKIND_HBW_PREFERRED = &MEMKIND_HBW_PREFERRED_STATIC;
 MEMKIND_EXPORT struct memkind *MEMKIND_HBW_HUGETLB = &MEMKIND_HBW_HUGETLB_STATIC;
+MEMKIND_EXPORT struct memkind *MEMKIND_HBW_ALL_HUGETLB = &MEMKIND_HBW_ALL_HUGETLB_STATIC;
 MEMKIND_EXPORT struct memkind *MEMKIND_HBW_PREFERRED_HUGETLB = &MEMKIND_HBW_PREFERRED_HUGETLB_STATIC;
 MEMKIND_EXPORT struct memkind *MEMKIND_HBW_GBTLB = &MEMKIND_HBW_GBTLB_STATIC;
 MEMKIND_EXPORT struct memkind *MEMKIND_HBW_PREFERRED_GBTLB = &MEMKIND_HBW_PREFERRED_GBTLB_STATIC;
 MEMKIND_EXPORT struct memkind *MEMKIND_GBTLB = &MEMKIND_GBTLB_STATIC;
 MEMKIND_EXPORT struct memkind *MEMKIND_HBW_INTERLEAVE = &MEMKIND_HBW_INTERLEAVE_STATIC;
+MEMKIND_EXPORT struct memkind *MEMKIND_REGULAR = &MEMKIND_REGULAR_STATIC;
 
 struct memkind_registry {
     struct memkind *partition_map[MEMKIND_MAX_KIND];
@@ -170,6 +195,9 @@ static struct memkind_registry memkind_registry_g = {
         [MEMKIND_PARTITION_GBTLB] = &MEMKIND_GBTLB_STATIC,
         [MEMKIND_PARTITION_HBW_INTERLEAVE] = &MEMKIND_HBW_INTERLEAVE_STATIC,
         [MEMKIND_PARTITION_INTERLEAVE] = &MEMKIND_INTERLEAVE_STATIC,
+        [MEMKIND_PARTITION_REGULAR] = &MEMKIND_REGULAR_STATIC,
+        [MEMKIND_PARTITION_HBW_ALL] = &MEMKIND_HBW_ALL_STATIC,
+        [MEMKIND_PARTITION_HBW_ALL_HUGETLB] = &MEMKIND_HBW_ALL_HUGETLB_STATIC,
     },
     MEMKIND_NUM_BASE_KIND,
     PTHREAD_MUTEX_INITIALIZER
@@ -185,7 +213,6 @@ void *kind_mmap(struct memkind *kind, void* addr, size_t size)
     }
 }
 
-static size_t Chunksize = 0;
 
 static int validate_memtype_bits(memkind_memtype_t memtype) {
     if(memtype == 0) return -1;
@@ -208,6 +235,27 @@ static int validate_policy(memkind_policy_t policy) {
     if((policy >= 0) && (policy < MEMKIND_POLICY_MAX_VALUE)) return 0;
     return -1;
 }
+
+struct create_args {
+    memkind_t kind;
+    memkind_policy_t policy;
+    memkind_bits_t flags;
+    memkind_memtype_t memtype_flags;
+};
+
+static struct create_args supported_args[] = {
+
+    {&MEMKIND_HBW_STATIC,                    MEMKIND_POLICY_BIND_LOCAL,      0,                          MEMKIND_MEMTYPE_HIGH_BANDWIDTH},
+    {&MEMKIND_HBW_HUGETLB_STATIC,            MEMKIND_POLICY_BIND_LOCAL,      MEMKIND_MASK_PAGE_SIZE_2MB, MEMKIND_MEMTYPE_HIGH_BANDWIDTH},
+    {&MEMKIND_HBW_ALL_STATIC,                MEMKIND_POLICY_BIND_ALL,        0,                          MEMKIND_MEMTYPE_HIGH_BANDWIDTH},
+    {&MEMKIND_HBW_ALL_HUGETLB_STATIC,        MEMKIND_POLICY_BIND_ALL,        MEMKIND_MASK_PAGE_SIZE_2MB, MEMKIND_MEMTYPE_HIGH_BANDWIDTH},
+    {&MEMKIND_HBW_PREFERRED_STATIC,          MEMKIND_POLICY_PREFERRED_LOCAL, 0,                          MEMKIND_MEMTYPE_HIGH_BANDWIDTH},
+    {&MEMKIND_HBW_PREFERRED_HUGETLB_STATIC,  MEMKIND_POLICY_PREFERRED_LOCAL, MEMKIND_MASK_PAGE_SIZE_2MB, MEMKIND_MEMTYPE_HIGH_BANDWIDTH},
+    {&MEMKIND_HBW_INTERLEAVE_STATIC,         MEMKIND_POLICY_INTERLEAVE_ALL,  0,                          MEMKIND_MEMTYPE_HIGH_BANDWIDTH},
+    {&MEMKIND_DEFAULT_STATIC,                MEMKIND_POLICY_PREFERRED_LOCAL, 0,                          MEMKIND_MEMTYPE_DEFAULT},
+    {&MEMKIND_HUGETLB_STATIC,                MEMKIND_POLICY_PREFERRED_LOCAL, MEMKIND_MASK_PAGE_SIZE_2MB, MEMKIND_MEMTYPE_DEFAULT},
+    {&MEMKIND_INTERLEAVE_STATIC,             MEMKIND_POLICY_INTERLEAVE_ALL,  0,                          MEMKIND_MEMTYPE_HIGH_BANDWIDTH | MEMKIND_MEMTYPE_DEFAULT},
+};
 
 /* Kind creation */
 MEMKIND_EXPORT int memkind_create_kind(memkind_memtype_t memtype_flags,
@@ -235,63 +283,26 @@ MEMKIND_EXPORT int memkind_create_kind(memkind_memtype_t memtype_flags,
         return MEMKIND_ERROR_INVALID;
     }
 
-    memkind_t tmp_kind = NULL;
+    int i, num_supported_args = sizeof(supported_args) / sizeof(struct create_args);
+    for(i = 0; i < num_supported_args; i++) {
+        if((supported_args[i].memtype_flags == memtype_flags) &&
+           (supported_args[i].policy == policy) &&
+           (supported_args[i].flags == flags)) {
 
-    if(memtype_flags == MEMKIND_MEMTYPE_DEFAULT) {
-        if(policy == MEMKIND_POLICY_PREFERRED_LOCAL) {
-            if(flags & MEMKIND_MASK_PAGE_SIZE_2MB)
-                tmp_kind = MEMKIND_HUGETLB;
-            else
-                tmp_kind = MEMKIND_DEFAULT;
-        }
-    }
-
-    if(memtype_flags == MEMKIND_MEMTYPE_HIGH_BANDWIDTH) {
-        if(policy == MEMKIND_POLICY_BIND_LOCAL) {
-            if(flags & MEMKIND_MASK_PAGE_SIZE_2MB)
-                tmp_kind = MEMKIND_HBW_HUGETLB;
-            else
-                tmp_kind = MEMKIND_HBW;
-        }
-
-        if(policy == MEMKIND_POLICY_PREFERRED_LOCAL) {
-            if(flags & MEMKIND_MASK_PAGE_SIZE_2MB)
-                tmp_kind = MEMKIND_HBW_PREFERRED_HUGETLB;
-            else
-                tmp_kind = MEMKIND_HBW_PREFERRED;
-        }
-
-        if((policy == MEMKIND_POLICY_INTERLEAVE_ALL)
-            && !(flags & MEMKIND_MASK_PAGE_SIZE_2MB))
-        {
-            tmp_kind = MEMKIND_HBW_INTERLEAVE;
-        }
-    }
-
-    if((memtype_flags & MEMKIND_MEMTYPE_HIGH_BANDWIDTH)
-        && (memtype_flags & MEMKIND_MEMTYPE_DEFAULT)
-        && (policy == MEMKIND_POLICY_INTERLEAVE_ALL)
-        && !(flags & MEMKIND_MASK_PAGE_SIZE_2MB))
-    {
-        tmp_kind = MEMKIND_INTERLEAVE;
-    }
-
-    if(tmp_kind == NULL) {
-        log_err("Cannot create kind: invalid argument.");
-        return MEMKIND_ERROR_INVALID;
-    }
-
-    if(memkind_check_available(tmp_kind) != 0) {
-        if(policy == MEMKIND_POLICY_PREFERRED_LOCAL) {
-            tmp_kind = MEMKIND_DEFAULT;
-        } else {
+            if(memkind_check_available(supported_args[i].kind) == 0) {
+                *kind = supported_args[i].kind;
+                return MEMKIND_SUCCESS;
+            } else if(policy == MEMKIND_POLICY_PREFERRED_LOCAL) {
+                *kind = MEMKIND_DEFAULT;
+                return MEMKIND_SUCCESS;
+            }
             log_err("Cannot create kind: requested memory type is not available.");
             return MEMKIND_ERROR_MEMTYPE_NOT_AVAILABLE;
         }
     }
 
-    *kind = tmp_kind;
-    return MEMKIND_SUCCESS;
+    log_err("Cannot create kind: unsupported set of capabilities.");
+    return MEMKIND_ERROR_INVALID;
 }
 
 /* Kind destruction. */
@@ -652,22 +663,12 @@ MEMKIND_EXPORT int memkind_create_pmem(const char *dir, size_t max_size,
     int err = 0;
     int oerrno;
 
-    size_t s = sizeof (Chunksize);
-
-    if (Chunksize == 0) {
-        err = jemk_mallctl("opt.lg_chunk", &Chunksize, &s, NULL, 0);
-        if (err) {
-            return MEMKIND_ERROR_RUNTIME;
-        }
-        Chunksize = 1 << Chunksize; /* 2^N */
-    }
-
     if (max_size < MEMKIND_PMEM_MIN_SIZE) {
         return MEMKIND_ERROR_INVALID;
     }
 
     /* round up to a multiple of jemalloc chunk size */
-    max_size = roundup(max_size, Chunksize);
+    max_size = roundup(max_size, MEMKIND_PMEM_CHUNK_SIZE);
 
     int fd = -1;
     void *addr;
@@ -685,7 +686,7 @@ MEMKIND_EXPORT int memkind_create_pmem(const char *dir, size_t max_size,
         goto exit;
     }
 
-    void *aligned_addr = (void *)roundup((uintptr_t)addr, Chunksize);
+    void *aligned_addr = (void *)roundup((uintptr_t)addr, MEMKIND_PMEM_CHUNK_SIZE);
     struct memkind_pmem *priv = (*kind)->priv;
 
     priv->fd = fd;
@@ -703,3 +704,25 @@ exit:
     errno = oerrno;
     return err;
 }
+
+static int memkind_get_kind_by_partition_internal(int partition, struct memkind **kind)
+{
+    int err = 0;
+
+    if (MEMKIND_LIKELY(partition >= 0 &&
+        partition < MEMKIND_MAX_KIND &&
+        memkind_registry_g.partition_map[partition] != NULL)) {
+            *kind = memkind_registry_g.partition_map[partition];
+    }
+    else {
+       *kind = NULL;
+       err = MEMKIND_ERROR_UNAVAILABLE;
+    }
+    return err;
+}
+
+MEMKIND_EXPORT int memkind_get_kind_by_partition(int partition, struct memkind **kind)
+{
+    return memkind_get_kind_by_partition_internal(partition, kind);
+}
+

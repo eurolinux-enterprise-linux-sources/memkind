@@ -1,8 +1,8 @@
-%global gittag0 v1.5.0
+%global gittag0 v1.7.0
 
 Name: memkind
 Summary: User Extensible Heap Manager
-Version: 1.5.0
+Version: 1.7.0
 Release: 1%{?checkout}%{?dist}
 License: BSD
 Group: System Environment/Libraries
@@ -60,40 +60,17 @@ alpha release. Feedback on design or implementation is greatly appreciated.
 # To ensure the memkind build step is able to discover the output
 # of the jemalloc build we must create an 'obj' directory, and build
 # from within that directory.
-cd %{_builddir}/%{name}-%{version}/jemalloc/
-echo %{version} > %{_builddir}/%{name}-%{version}/jemalloc/VERSION
-test -f configure || %{__autoconf}
-mkdir %{_builddir}/%{name}-%{version}/jemalloc/obj
-ln -s %{_builddir}/%{name}-%{version}/jemalloc/configure \
-      %{_builddir}/%{name}-%{version}/jemalloc/obj/
-cd %{_builddir}/%{name}-%{version}/jemalloc/obj
-%configure --enable-autogen --with-jemalloc-prefix=jemk_ --enable-memkind \
-           --enable-safe --enable-cc-silence --prefix=%{_prefix} \
-	   --without-export --disable-stats --disable-fill \
-	   --disable-valgrind --disable-experimental\
-           --includedir=%{_includedir} --libdir=%{_libdir} \
-           --bindir=%{_bindir} --docdir=%{_docdir}/%{name} \
-           --mandir=%{_mandir} CFLAGS="$RPM_OPT_FLAGS -std=gnu99"
-
-%{__make} %{?_smp_mflags}
-
-# Build memkind lib and tools
 cd %{_builddir}/%{name}-%{version}
 echo %{version} > %{_builddir}/%{name}-%{version}/VERSION
-touch %{_builddir}/%{name}-%{version}/jemalloc/.git
-test -f configure || ./autogen.sh
-%configure --enable-tls --prefix=%{_prefix} --libdir=%{_libdir} \
-           --includedir=%{_includedir} --sbindir=%{_sbindir} \
-           --mandir=%{_mandir} --docdir=%{_docdir}/%{name} \
-           CFLAGS="$RPM_OPT_FLAGS -std=gnu99"
-%{__make} %{?_smp_mflags}
+./build.sh --prefix=%{_prefix} --includedir=%{_includedir} --libdir=%{_libdir} \
+	   --bindir=%{_bindir} --docdir=%{_docdir}/%{name} --mandir=%{_mandir} \
+	   --sbindir=%{_sbindir}
 
 %install
 cd %{_builddir}/%{name}-%{version}
-%{__make} DESTDIR=%{buildroot} install
-make install DESTDIR=%{buildroot} INSTALL='install -p'
+make DESTDIR=%{buildroot} INSTALL='install -p' install
 rm -f %{buildroot}/%{_libdir}/lib%{name}.{l,}a
-rm -f %{buildroot}/%{_libdir}/lib{numakind,autohbw}.*
+rm -f %{buildroot}/%{_libdir}/libautohbw.{l,}a
 rm -f %{buildroot}/%{_docdir}/%{name}/VERSION
 
 %post -p /sbin/ldconfig
@@ -103,6 +80,7 @@ rm -f %{buildroot}/%{_docdir}/%{name}/VERSION
 %files
 %defattr(-,root,root,-)
 %{_libdir}/lib%{name}.so.*
+%{_libdir}/libautohbw.so.*
 %{_bindir}/%{name}-hbw-nodes
 %dir %{_docdir}/%{name}
 %doc %{_docdir}/%{name}/README
@@ -117,11 +95,15 @@ rm -f %{buildroot}/%{_docdir}/%{name}/VERSION
 %{_includedir}/hbwmalloc.h
 %{_includedir}/hbw_allocator.h
 %{_libdir}/lib%{name}.so
+%{_libdir}/libautohbw.so
 %{_mandir}/man3/hbwmalloc.3.*
 %{_mandir}/man3/hbwallocator.3.*
 %{_mandir}/man3/%{name}*.3.*
 
 %changelog
+* Thu Jun  7 2018 Rafael Aquini <aquini@redhat.com> - 1.7.0-1
+- Update memkind source file to 1.7.0 upstream (1542433)
+
 * Mon Mar 27 2017 Rafael Aquini <aquini@linux.com> - 1.5.0-1
 - Update memkind source file to 1.5.0 upstream
 

@@ -35,20 +35,20 @@
 #include "check.h"
 #include "omp.h"
 #include "trial_generator.h"
+#include "allocator_perf_tool/HugePageOrganizer.hpp"
 
 /* Set of negative test cases for memkind, its main goal are to verify that the
  * library behaves accordingly to documentation when calling an API with
  * invalid inputs, incorrect usage, NULL pointers.
  */
 class NegativeTest: public ::testing::Test
+{};
+
+class NegativeTestHuge: public ::testing::Test
 {
-
-protected:
-    void SetUp()
-    {}
-
-    void TearDown()
-    {}
+private:
+    //Enable huge pages to avoid false positive test result.
+    HugePageOrganizer huge_page_organizer = HugePageOrganizer(8);
 };
 
 TEST_F(NegativeTest, test_TC_MEMKIND_Negative_create_kind_zero_memtype)
@@ -191,28 +191,6 @@ TEST_F(NegativeTest, test_TC_MEMKIND_Negative_create_kind_DEFAULT_INTERLEAVE_ALL
     int ret = memkind_create_kind(
         MEMKIND_MEMTYPE_DEFAULT,
         MEMKIND_POLICY_INTERLEAVE_ALL,
-        MEMKIND_MASK_PAGE_SIZE_2MB,
-        &kind);
-    ASSERT_EQ(ret, MEMKIND_ERROR_INVALID);
-}
-
-TEST_F(NegativeTest, test_TC_MEMKIND_Negative_create_kind_HIGH_BANDWIDTH_BIND_ALL)
-{
-    memkind_t kind;
-    int ret = memkind_create_kind(
-        MEMKIND_MEMTYPE_HIGH_BANDWIDTH,
-        MEMKIND_POLICY_BIND_ALL,
-        memkind_bits_t(),
-        &kind);
-    ASSERT_EQ(ret, MEMKIND_ERROR_INVALID);
-}
-
-TEST_F(NegativeTest, test_TC_MEMKIND_Negative_create_kind_HIGH_BANDWIDTH_BIND_ALL_PAGE_SIZE_2MB)
-{
-    memkind_t kind;
-    int ret = memkind_create_kind(
-        MEMKIND_MEMTYPE_HIGH_BANDWIDTH,
-        MEMKIND_POLICY_BIND_ALL,
         MEMKIND_MASK_PAGE_SIZE_2MB,
         &kind);
     ASSERT_EQ(ret, MEMKIND_ERROR_INVALID);
@@ -548,4 +526,12 @@ TEST_F(NegativeTest, test_TC_MEMKIND_Negative_GBNullRealloc)
 TEST_F(NegativeTest, test_TC_MEMKIND_Negative_GBNullFree)
 {
     memkind_free(MEMKIND_GBTLB, NULL);
+}
+
+TEST_F(NegativeTestHuge, test_TC_MEMKIND_hbwmalloc_memalign_psize_Interleave_Policy_PAGE_SIZE_2MB)
+{
+    void* ptr = NULL;
+    hbw_set_policy(HBW_POLICY_INTERLEAVE);
+    int ret = hbw_posix_memalign_psize(&ptr, 4096, 4096, HBW_PAGESIZE_2MB);
+    ASSERT_EQ(EINVAL, ret);
 }

@@ -1,5 +1,5 @@
 #
-#  Copyright (C) 2014 - 2016 Intel Corporation.
+#  Copyright (C) 2014 - 2017 Intel Corporation.
 #  All rights reserved.
 #
 #  Redistribution and use in source and binary forms, with or without
@@ -183,13 +183,11 @@ rm -f %{buildroot}/%{_libdir}/libautohbw.{l,}a
 %files tests
 %defattr(-,root,root,-)
 $(memkind_test_dir)/all_tests
-$(memkind_test_dir)/bat_bind_tests
-$(memkind_test_dir)/bat_interleave_tests
 $(memkind_test_dir)/environ_err_hbw_malloc_test
 $(memkind_test_dir)/decorator_test
+$(memkind_test_dir)/locality_test
 $(memkind_test_dir)/freeing_memory_segfault_test
 $(memkind_test_dir)/gb_page_tests_bind_policy
-$(memkind_test_dir)/gb_page_tests_preferred_policy
 $(memkind_test_dir)/filter_memkind
 $(memkind_test_dir)/hello_hbw
 $(memkind_test_dir)/hello_memkind
@@ -207,13 +205,13 @@ $(memkind_test_dir)/memkind-slts.ts
 $(memkind_test_dir)/memkind-perf.ts
 $(memkind_test_dir)/memkind-perf-ext.ts
 $(memkind_test_dir)/memkind-pytests.ts
-$(memkind_test_dir)/check.sh
 $(memkind_test_dir)/test.sh
 $(memkind_test_dir)/hbw_detection_test.py
 $(memkind_test_dir)/autohbw_test.py
 $(memkind_test_dir)/trace_mechanism_test.py
 $(memkind_test_dir)/python_framework
 $(memkind_test_dir)/python_framework/cmd_helper.py
+$(memkind_test_dir)/python_framework/huge_page_organizer.py
 $(memkind_test_dir)/python_framework/__init__.py
 $(memkind_test_dir)/draw_plots.py
 $(memkind_test_dir)/run_alloc_benchmark.sh

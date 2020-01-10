@@ -31,13 +31,11 @@ check_PROGRAMS += test/all_tests \
                   test/autohbw_test_helper \
                   test/trace_mechanism_test_helper \
                   test/gb_page_tests_bind_policy \
-                  test/gb_page_tests_preferred_policy \
-                  test/bat_bind_tests \
-                  test/bat_interleave_tests \
                   test/freeing_memory_segfault_test \
+                  test/locality_test \
                   # end
 
-TESTS += test/check.sh
+TESTS += test/test.sh
 
 EXTRA_DIST += test/memkind-afts.ts \
               test/memkind-afts-ext.ts \
@@ -49,6 +47,7 @@ EXTRA_DIST += test/memkind-afts.ts \
               test/autohbw_test.py \
               test/trace_mechanism_test.py \
               test/python_framework/cmd_helper.py \
+              test/python_framework/huge_page_organizer.py \
               test/python_framework/__init__.py \
               test/draw_plots.py \
               test/run_alloc_benchmark.sh \
@@ -64,9 +63,6 @@ test_decorator_test_LDADD = libmemkind.la
 test_allocator_perf_tool_tests_LDADD = libmemkind.la
 test_autohbw_test_helper_LDADD = libmemkind.la
 test_gb_page_tests_bind_policy_LDADD = libmemkind.la
-test_gb_page_tests_preferred_policy_LDADD = libmemkind.la
-test_bat_bind_tests_LDADD = libmemkind.la
-test_bat_interleave_tests_LDADD = libmemkind.la
 test_trace_mechanism_test_helper_LDADD = libmemkind.la
 test_freeing_memory_segfault_test_LDADD = libmemkind.la
 
@@ -76,6 +72,7 @@ fused_gtest = test/gtest_fused/gtest/gtest-all.cc \
 
 test_all_tests_SOURCES = $(fused_gtest) \
                          test/Allocator.hpp \
+                         test/TestPolicy.hpp \
                          test/common.h \
                          test/bat_tests.cpp \
                          test/trial_generator.cpp \
@@ -84,10 +81,8 @@ test_all_tests_SOURCES = $(fused_gtest) \
                          test/trial_generator.h \
                          test/static_kinds_list.h \
                          test/check.h \
-                         test/extended_tests.cpp \
                          test/negative_tests.cpp \
                          test/error_message_tests.cpp \
-                         test/memkind_default_tests.cpp \
                          test/get_arena_test.cpp \
                          test/memkind_pmem_tests.cpp \
                          test/performance/operations.hpp \
@@ -99,15 +94,19 @@ test_all_tests_SOURCES = $(fused_gtest) \
                          test/memkind_versioning_tests.cpp \
                          test/static_kinds_tests.cpp \
                          test/hbw_verify_function_test.cpp \
+                         test/dlopen_test.cpp \
                          #end
+
+test_locality_test_SOURCES = $(fused_gtest) test/allocator_perf_tool/Allocation_info.cpp test/locality_test.cpp
+test_locality_test_LDADD = libmemkind.la
+
+test_locality_test_CPPFLAGS = -fopenmp -O0 -Wno-error $(AM_CPPFLAGS)
+test_locality_test_CXXFLAGS = -fopenmp -O0 -Wno-error $(AM_CPPFLAGS)
 
 test_environ_err_hbw_malloc_test_SOURCES = test/environ_err_hbw_malloc_test.cpp
 test_decorator_test_SOURCES = $(fused_gtest) test/decorator_test.cpp test/decorator_test.h
 test_autohbw_test_helper_SOURCES = test/autohbw_test_helper.c
 test_gb_page_tests_bind_policy_SOURCES = $(fused_gtest) test/gb_page_tests_bind_policy.cpp test/trial_generator.cpp test/check.cpp
-test_gb_page_tests_preferred_policy_SOURCES = $(fused_gtest) test/gb_page_tests_preferred_policy.cpp test/trial_generator.cpp test/check.cpp
-test_bat_bind_tests_SOURCES = $(fused_gtest) test/bat_bind_tests.cpp test/trial_generator.cpp test/check.cpp
-test_bat_interleave_tests_SOURCES = $(fused_gtest) test/bat_interleave_tests.cpp test/trial_generator.cpp test/check.cpp
 test_trace_mechanism_test_helper_SOURCES = test/trace_mechanism_test_helper.c
 test_freeing_memory_segfault_test_SOURCES = $(fused_gtest) test/freeing_memory_segfault_test.cpp
 
@@ -121,10 +120,6 @@ allocator_perf_tool_library_sources = test/allocator_perf_tool/AllocationSizes.h
                                       test/allocator_perf_tool/CommandLine.hpp \
                                       test/allocator_perf_tool/Configuration.hpp \
                                       test/allocator_perf_tool/ConsoleLog.hpp \
-                                      test/allocator_perf_tool/FootprintSampling.cpp \
-                                      test/allocator_perf_tool/FootprintSampling.h \
-                                      test/allocator_perf_tool/FootprintTask.cpp \
-                                      test/allocator_perf_tool/FootprintTask.h \
                                       test/allocator_perf_tool/FunctionCalls.hpp \
                                       test/allocator_perf_tool/FunctionCallsPerformanceTask.cpp \
                                       test/allocator_perf_tool/FunctionCallsPerformanceTask.h \
@@ -132,10 +127,8 @@ allocator_perf_tool_library_sources = test/allocator_perf_tool/AllocationSizes.h
                                       test/allocator_perf_tool/Iterator.hpp \
                                       test/allocator_perf_tool/JemallocAllocatorWithTimer.hpp \
                                       test/allocator_perf_tool/MemkindAllocatorWithTimer.hpp \
-                                      test/allocator_perf_tool/MemoryFootprintStats.hpp \
                                       test/allocator_perf_tool/Numastat.hpp \
                                       test/allocator_perf_tool/Runnable.hpp \
-                                      test/allocator_perf_tool/Sample.hpp \
                                       test/allocator_perf_tool/ScenarioWorkload.cpp \
                                       test/allocator_perf_tool/ScenarioWorkload.h \
                                       test/allocator_perf_tool/StandardAllocatorWithTimer.hpp \
@@ -153,6 +146,9 @@ allocator_perf_tool_library_sources = test/allocator_perf_tool/AllocationSizes.h
                                       test/allocator_perf_tool/HugePageUnmap.hpp \
                                       test/allocator_perf_tool/HugePageOrganizer.hpp \
                                       test/allocator_perf_tool/HBWmallocAllocatorWithTimer.hpp \
+                                      test/memory_manager.h \
+                                      test/random_sizes_allocator.h \
+                                      test/proc_stat.h \
                                       # end
 
 
@@ -162,6 +158,7 @@ test_allocator_perf_tool_tests_SOURCES = $(allocator_perf_tool_library_sources) 
                                          test/heap_manager_init_perf_test.cpp \
                                          test/huge_page_test.cpp \
                                          test/alloc_performance_tests.cpp \
+                                         test/memory_footprint_test.cpp \
                                          # end
 
 
@@ -169,7 +166,7 @@ test_allocator_perf_tool_tests_CPPFLAGS = -Itest/allocator_perf_tool/ -lpthread 
 test_allocator_perf_tool_tests_CXXFLAGS = -Itest/allocator_perf_tool/ -lpthread -lnuma -O0 -Wno-error $(AM_CPPFLAGS)
 
 NUMAKIND_MAX = 2048
-test_all_tests_CXXFLAGS = $(AM_CXXFLAGS) $(CXXFLAGS) $(OPENMP_CFLAGS) -DNUMAKIND_MAX=$(NUMAKIND_MAX)
+test_all_tests_CXXFLAGS = $(AM_CXXFLAGS) $(CXXFLAGS) $(OPENMP_CFLAGS) -DNUMAKIND_MAX=$(NUMAKIND_MAX) -ldl
 
 #Allocator Perf Tool stand alone app
 check_PROGRAMS += test/perf_tool

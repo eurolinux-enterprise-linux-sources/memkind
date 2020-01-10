@@ -64,6 +64,24 @@ MEMKIND_EXPORT struct memkind_ops MEMKIND_HBW_OPS = {
     .finalize = memkind_arena_finalize
 };
 
+MEMKIND_EXPORT struct memkind_ops MEMKIND_HBW_ALL_OPS = {
+    .create = memkind_arena_create,
+    .destroy = memkind_default_destroy,
+    .malloc = memkind_arena_malloc,
+    .calloc = memkind_arena_calloc,
+    .posix_memalign = memkind_arena_posix_memalign,
+    .realloc = memkind_arena_realloc,
+    .free = heap_manager_free,
+    .check_available = memkind_hbw_check_available,
+    .mbind = memkind_default_mbind,
+    .get_mmap_flags = memkind_default_get_mmap_flags,
+    .get_mbind_mode = memkind_default_get_mbind_mode,
+    .get_mbind_nodemask = memkind_hbw_all_get_mbind_nodemask,
+    .get_arena = memkind_thread_get_arena,
+    .init_once = memkind_hbw_all_init_once,
+    .finalize = memkind_arena_finalize
+};
+
 MEMKIND_EXPORT struct memkind_ops MEMKIND_HBW_HUGETLB_OPS = {
     .create = memkind_arena_create,
     .destroy = memkind_default_destroy,
@@ -79,6 +97,24 @@ MEMKIND_EXPORT struct memkind_ops MEMKIND_HBW_HUGETLB_OPS = {
     .get_mbind_nodemask = memkind_hbw_get_mbind_nodemask,
     .get_arena = memkind_thread_get_arena,
     .init_once = memkind_hbw_hugetlb_init_once,
+    .finalize = memkind_arena_finalize
+};
+
+MEMKIND_EXPORT struct memkind_ops MEMKIND_HBW_ALL_HUGETLB_OPS = {
+    .create = memkind_arena_create,
+    .destroy = memkind_default_destroy,
+    .malloc = memkind_arena_malloc,
+    .calloc = memkind_arena_calloc,
+    .posix_memalign = memkind_arena_posix_memalign,
+    .realloc = memkind_arena_realloc,
+    .free = heap_manager_free,
+    .check_available = memkind_hbw_hugetlb_check_available,
+    .mbind = memkind_default_mbind,
+    .get_mmap_flags = memkind_hugetlb_get_mmap_flags,
+    .get_mbind_mode = memkind_default_get_mbind_mode,
+    .get_mbind_nodemask = memkind_hbw_all_get_mbind_nodemask,
+    .get_arena = memkind_thread_get_arena,
+    .init_once = memkind_hbw_all_hugetlb_init_once,
     .finalize = memkind_arena_finalize
 };
 
@@ -423,11 +459,6 @@ static void memkind_hbw_closest_numanode_init(void)
     if (g->init_err)
         goto exit;
 
-    if (num_unique == 1) {
-       g->init_err = MEMKIND_ERROR_UNAVAILABLE;
-       goto exit;
-    }
-
     high_bandwidth = bandwidth_nodes[num_unique-1].bandwidth;
     g->init_err = set_closest_numanode(num_unique, bandwidth_nodes,
                                        high_bandwidth, g->num_cpu,
@@ -628,9 +659,19 @@ MEMKIND_EXPORT void memkind_hbw_init_once(void)
     memkind_init(MEMKIND_HBW, true);
 }
 
+MEMKIND_EXPORT void memkind_hbw_all_init_once(void)
+{
+    memkind_init(MEMKIND_HBW_ALL, true);
+}
+
 MEMKIND_EXPORT void memkind_hbw_hugetlb_init_once(void)
 {
     memkind_init(MEMKIND_HBW_HUGETLB, true);
+}
+
+MEMKIND_EXPORT void memkind_hbw_all_hugetlb_init_once(void)
+{
+    memkind_init(MEMKIND_HBW_ALL_HUGETLB, true);
 }
 
 MEMKIND_EXPORT void memkind_hbw_preferred_init_once(void)
