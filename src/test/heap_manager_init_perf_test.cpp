@@ -27,6 +27,7 @@
 #include "common.h"
 #include "allocator_perf_tool/Configuration.hpp"
 #include "allocator_perf_tool/AllocatorFactory.hpp"
+#include "allocator_perf_tool/HugePageOrganizer.hpp"
 
 //Test heap managers initialization performance.
 class HeapManagerInitPerfTest: public :: testing::Test
@@ -78,67 +79,70 @@ protected:
 };
 
 
-TEST_F(HeapManagerInitPerfTest, TC_INIT_MEMKIND_DEFAULT)
+TEST_F(HeapManagerInitPerfTest, test_TC_MEMKIND_perf_libinit_DEFAULT)
 {
         AllocatorFactory::initialization_stat stat = allocator_factory.initialize_allocator(AllocatorTypes::MEMKIND_DEFAULT);
         post_test(stat);
 }
 
-TEST_F(HeapManagerInitPerfTest, TC_INIT_MEMKIND_HBW)
+TEST_F(HeapManagerInitPerfTest, test_TC_MEMKIND_perf_libinit_HBW)
 {
         AllocatorFactory::initialization_stat stat = allocator_factory.initialize_allocator(AllocatorTypes::MEMKIND_HBW);
         post_test(stat);
 }
 
-TEST_F(HeapManagerInitPerfTest, TC_INIT_MEMKIND_INTERLEAVE)
+TEST_F(HeapManagerInitPerfTest, test_TC_MEMKIND_perf_libinit_INTERLEAVE)
 {
         AllocatorFactory::initialization_stat stat = allocator_factory.initialize_allocator(AllocatorTypes::MEMKIND_INTERLEAVE);
         post_test(stat);
 }
 
-TEST_F(HeapManagerInitPerfTest, TC_INIT_MEMKIND_HBW_INTERLEAVE)
+TEST_F(HeapManagerInitPerfTest, test_TC_MEMKIND_perf_libinit_HBW_INTERLEAVE)
 {
         AllocatorFactory::initialization_stat stat = allocator_factory.initialize_allocator(AllocatorTypes::MEMKIND_HBW_INTERLEAVE);
         post_test(stat);
 }
 
-TEST_F(HeapManagerInitPerfTest, TC_INIT_MEMKIND_HBW_PREFERRED)
+TEST_F(HeapManagerInitPerfTest, test_TC_MEMKIND_perf_libinit_HBW_PREFERRED)
 {
         AllocatorFactory::initialization_stat stat = allocator_factory.initialize_allocator(AllocatorTypes::MEMKIND_HBW_PREFERRED);
         post_test(stat);
 }
 
-TEST_F(HeapManagerInitPerfTest, TC_INIT_MEMKIND_HUGETLB)
+TEST_F(HeapManagerInitPerfTest, test_TC_MEMKIND_perf_libinit_HUGETLB)
 {
+        ASSERT_HUGEPAGES_AVAILABILITY();
         AllocatorFactory::initialization_stat stat = allocator_factory.initialize_allocator(AllocatorTypes::MEMKIND_HUGETLB);
         post_test(stat);
 }
 
-TEST_F(HeapManagerInitPerfTest, TC_INIT_MEMKIND_GBTLB)
+TEST_F(HeapManagerInitPerfTest, test_TC_MEMKIND_perf_libinit_GBTLB)
 {
         AllocatorFactory::initialization_stat stat = allocator_factory.initialize_allocator(AllocatorTypes::MEMKIND_GBTLB);
         post_test(stat);
 }
 
-TEST_F(HeapManagerInitPerfTest, TC_INIT_MEMKIND_HBW_HUGETLB)
+TEST_F(HeapManagerInitPerfTest, test_TC_MEMKIND_perf_libinit_HBW_HUGETLB)
 {
+        ASSERT_HUGEPAGES_AVAILABILITY();
         AllocatorFactory::initialization_stat stat = allocator_factory.initialize_allocator(AllocatorTypes::MEMKIND_HBW_HUGETLB);
         post_test(stat);
 }
 
-TEST_F(HeapManagerInitPerfTest, TC_INIT_MEMKIND_HBW_PREFERRED_HUGETLB)
+TEST_F(HeapManagerInitPerfTest, test_TC_MEMKIND_perf_libinit_HBW_PREFERRED_HUGETLB)
 {
+        ASSERT_HUGEPAGES_AVAILABILITY();
         AllocatorFactory::initialization_stat stat = allocator_factory.initialize_allocator(AllocatorTypes::MEMKIND_HBW_PREFERRED_HUGETLB);
         post_test(stat);
 }
 
-TEST_F(HeapManagerInitPerfTest, TC_INIT_MEMKIND_HBW_GBTLB)
+TEST_F(HeapManagerInitPerfTest, test_TC_MEMKIND_perf_ext_libinit_HBW_GBTLB)
 {
         AllocatorFactory::initialization_stat stat = allocator_factory.initialize_allocator(AllocatorTypes::MEMKIND_HBW_GBTLB);
         post_test(stat);
 }
 
-TEST_F(HeapManagerInitPerfTest, TC_INIT_MEMKIND_HBW_PREFERRED_GBTLB)
+TEST_F(HeapManagerInitPerfTest, test_TC_MEMKIND_perf_libinit_HBW_PREFERRED_GBTLB)
 {
         AllocatorFactory::initialization_stat stat = allocator_factory.initialize_allocator(AllocatorTypes::MEMKIND_HBW_PREFERRED_GBTLB);
         post_test(stat);

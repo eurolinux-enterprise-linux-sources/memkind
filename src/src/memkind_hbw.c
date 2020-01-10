@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2014 - 2016 Intel Corporation.
+ * Copyright (C) 2014 - 2017 Intel Corporation.
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -22,7 +22,14 @@
  * ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#define _GNU_SOURCE
+#include <memkind/internal/memkind_hbw.h>
+#include <memkind/internal/memkind_default.h>
+#include <memkind/internal/memkind_hugetlb.h>
+#include <memkind/internal/memkind_arena.h>
+#include <memkind/internal/memkind_private.h>
+#include <memkind/internal/memkind_log.h>
+#include <memkind/internal/heap_manager.h>
+
 #include <stdlib.h>
 #include <stdio.h>
 #include <unistd.h>
@@ -31,101 +38,94 @@
 #include <numa.h>
 #include <numaif.h>
 #include <errno.h>
-#include <assert.h>
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <jemalloc/jemalloc.h>
 #include <utmpx.h>
 #include <sched.h>
 #include <stdint.h>
+#include <assert.h>
 
-
-#include <memkind/internal/memkind_hbw.h>
-#include <memkind/internal/memkind_default.h>
-#include <memkind/internal/memkind_hugetlb.h>
-#include <memkind/internal/memkind_arena.h>
-#include <memkind/internal/memkind_private.h>
-
-const struct memkind_ops MEMKIND_HBW_OPS = {
+MEMKIND_EXPORT struct memkind_ops MEMKIND_HBW_OPS = {
     .create = memkind_arena_create,
-    .destroy = memkind_arena_destroy,
+    .destroy = memkind_default_destroy,
     .malloc = memkind_arena_malloc,
     .calloc = memkind_arena_calloc,
     .posix_memalign = memkind_arena_posix_memalign,
     .realloc = memkind_arena_realloc,
-    .free = memkind_default_free,
+    .free = heap_manager_free,
     .check_available = memkind_hbw_check_available,
     .mbind = memkind_default_mbind,
     .get_mmap_flags = memkind_default_get_mmap_flags,
     .get_mbind_mode = memkind_default_get_mbind_mode,
     .get_mbind_nodemask = memkind_hbw_get_mbind_nodemask,
     .get_arena = memkind_thread_get_arena,
-    .get_size = memkind_default_get_size,
     .init_once = memkind_hbw_init_once,
+    .finalize = memkind_arena_finalize
 };
 
-const struct memkind_ops MEMKIND_HBW_HUGETLB_OPS = {
+MEMKIND_EXPORT struct memkind_ops MEMKIND_HBW_HUGETLB_OPS = {
     .create = memkind_arena_create,
-    .destroy = memkind_arena_destroy,
+    .destroy = memkind_default_destroy,
     .malloc = memkind_arena_malloc,
     .calloc = memkind_arena_calloc,
     .posix_memalign = memkind_arena_posix_memalign,
     .realloc = memkind_arena_realloc,
-    .free = memkind_default_free,
+    .free = heap_manager_free,
     .check_available = memkind_hbw_hugetlb_check_available,
     .mbind = memkind_default_mbind,
     .get_mmap_flags = memkind_hugetlb_get_mmap_flags,
     .get_mbind_mode = memkind_default_get_mbind_mode,
     .get_mbind_nodemask = memkind_hbw_get_mbind_nodemask,
     .get_arena = memkind_thread_get_arena,
-    .get_size = memkind_default_get_size,
     .init_once = memkind_hbw_hugetlb_init_once,
+    .finalize = memkind_arena_finalize
 };
 
-const struct memkind_ops MEMKIND_HBW_PREFERRED_OPS = {
+MEMKIND_EXPORT struct memkind_ops MEMKIND_HBW_PREFERRED_OPS = {
     .create = memkind_arena_create,
-    .destroy = memkind_arena_destroy,
+    .destroy = memkind_default_destroy,
     .malloc = memkind_arena_malloc,
     .calloc = memkind_arena_calloc,
     .posix_memalign = memkind_arena_posix_memalign,
     .realloc = memkind_arena_realloc,
-    .free = memkind_default_free,
+    .free = heap_manager_free,
     .check_available = memkind_hbw_check_available,
     .mbind = memkind_default_mbind,
     .get_mmap_flags = memkind_default_get_mmap_flags,
     .get_mbind_mode = memkind_preferred_get_mbind_mode,
     .get_mbind_nodemask = memkind_hbw_get_mbind_nodemask,
     .get_arena = memkind_thread_get_arena,
-    .get_size = memkind_default_get_size,
     .init_once = memkind_hbw_preferred_init_once,
+    .finalize = memkind_arena_finalize
 };
 
-const struct memkind_ops MEMKIND_HBW_PREFERRED_HUGETLB_OPS = {
+MEMKIND_EXPORT struct memkind_ops MEMKIND_HBW_PREFERRED_HUGETLB_OPS = {
     .create = memkind_arena_create,
-    .destroy = memkind_arena_destroy,
+    .destroy = memkind_default_destroy,
     .malloc = memkind_arena_malloc,
     .calloc = memkind_arena_calloc,
     .posix_memalign = memkind_arena_posix_memalign,
     .realloc = memkind_arena_realloc,
-    .free = memkind_default_free,
+    .free = heap_manager_free,
     .check_available = memkind_hbw_hugetlb_check_available,
     .mbind = memkind_default_mbind,
     .get_mmap_flags = memkind_hugetlb_get_mmap_flags,
     .get_mbind_mode = memkind_preferred_get_mbind_mode,
     .get_mbind_nodemask = memkind_hbw_get_mbind_nodemask,
     .get_arena = memkind_thread_get_arena,
-    .get_size = memkind_default_get_size,
     .init_once = memkind_hbw_preferred_hugetlb_init_once,
+    .finalize = memkind_arena_finalize
 };
 
-const struct memkind_ops MEMKIND_HBW_INTERLEAVE_OPS = {
+MEMKIND_EXPORT struct memkind_ops MEMKIND_HBW_INTERLEAVE_OPS = {
     .create = memkind_arena_create,
-    .destroy = memkind_arena_destroy,
+    .destroy = memkind_default_destroy,
     .malloc = memkind_arena_malloc,
     .calloc = memkind_arena_calloc,
     .posix_memalign = memkind_arena_posix_memalign,
     .realloc = memkind_arena_realloc,
-    .free = memkind_default_free,
+    .free = heap_manager_free,
     .check_available = memkind_hbw_check_available,
     .mbind = memkind_default_mbind,
     .madvise = memkind_nohugepage_madvise,
@@ -133,8 +133,8 @@ const struct memkind_ops MEMKIND_HBW_INTERLEAVE_OPS = {
     .get_mbind_mode = memkind_interleave_get_mbind_mode,
     .get_mbind_nodemask = memkind_hbw_all_get_mbind_nodemask,
     .get_arena = memkind_thread_get_arena,
-    .get_size = memkind_default_get_size,
     .init_once = memkind_hbw_interleave_init_once,
+    .finalize = memkind_arena_finalize
 };
 
 struct numanode_bandwidth_t {
@@ -173,22 +173,18 @@ extern unsigned int numa_bitmask_weight(const struct bitmask *bmp );
 
 static void assign_arbitrary_bandwidth_values(int* bandwidth, int bandwidth_len, struct bitmask* hbw_nodes);
 
-inline static void cpuid_asm(int leaf, int subleaf, uint32_t where[4]);
-
-static int is_cpu_xeon_phi_x200();
-
 static int fill_bandwidth_values_heuristically (int* bandwidth, int bandwidth_len);
 
 static int fill_bandwidth_values_from_enviroment(int* bandwidth, int bandwidth_len, char *hbw_nodes_env);
 
 static int fill_nodes_bandwidth(int* bandwidth, int bandwidth_len);
 
-int memkind_hbw_check_available(struct memkind *kind)
+MEMKIND_EXPORT int memkind_hbw_check_available(struct memkind *kind)
 {
     return kind->ops->get_mbind_nodemask(kind, NULL, 0);
 }
 
-int memkind_hbw_hugetlb_check_available(struct memkind *kind)
+MEMKIND_EXPORT int memkind_hbw_hugetlb_check_available(struct memkind *kind)
 {
     int err = memkind_hbw_check_available(kind);
     if (!err) {
@@ -197,16 +193,7 @@ int memkind_hbw_hugetlb_check_available(struct memkind *kind)
     return err;
 }
 
-int memkind_hbw_gbtlb_check_available(struct memkind *kind)
-{
-    int err = memkind_hbw_check_available(kind);
-    if (!err) {
-        err = memkind_hugetlb_check_available_1gb(kind);
-    }
-    return err;
-}
-
-int memkind_hbw_get_mbind_nodemask(struct memkind *kind,
+MEMKIND_EXPORT int memkind_hbw_get_mbind_nodemask(struct memkind *kind,
                                    unsigned long *nodemask,
                                    unsigned long maxnode)
 {
@@ -215,22 +202,21 @@ int memkind_hbw_get_mbind_nodemask(struct memkind *kind,
     struct memkind_hbw_closest_numanode_t *g =
             &memkind_hbw_closest_numanode_g;
     pthread_once(&memkind_hbw_closest_numanode_once_g,
-                 memkind_hbw_closest_numanode_init);
-
-    if (!g->init_err && nodemask) {
+                memkind_hbw_closest_numanode_init);
+    if (MEMKIND_LIKELY(!g->init_err && nodemask)) {
         numa_bitmask_clearall(&nodemask_bm);
         cpu = sched_getcpu();
-        if (cpu < g->num_cpu) {
+        if (MEMKIND_LIKELY(cpu < g->num_cpu)) {
             numa_bitmask_setbit(&nodemask_bm, g->closest_numanode[cpu]);
         }
         else {
-            return MEMKIND_ERROR_GETCPU;
+            return MEMKIND_ERROR_RUNTIME;
         }
     }
     return g->init_err;
 }
 
-int memkind_hbw_all_get_mbind_nodemask(struct memkind *kind,
+MEMKIND_EXPORT int memkind_hbw_all_get_mbind_nodemask(struct memkind *kind,
                                        unsigned long *nodemask,
                                        unsigned long maxnode)
 {
@@ -239,9 +225,9 @@ int memkind_hbw_all_get_mbind_nodemask(struct memkind *kind,
     struct memkind_hbw_closest_numanode_t *g =
             &memkind_hbw_closest_numanode_g;
     pthread_once(&memkind_hbw_closest_numanode_once_g,
-                 memkind_hbw_closest_numanode_init);
+                memkind_hbw_closest_numanode_init);
 
-    if (!g->init_err && nodemask) {
+    if (MEMKIND_LIKELY(!g->init_err && nodemask)) {
         numa_bitmask_clearall(&nodemask_bm);
         for (cpu = 0; cpu < g->num_cpu; ++cpu) {
             numa_bitmask_setbit(&nodemask_bm, g->closest_numanode[cpu]);
@@ -272,74 +258,110 @@ static void assign_arbitrary_bandwidth_values(int* bandwidth, int bandwidth_len,
 
 }
 
-#define CPUID_MODEL_MASK        (0xf<<4)
-#define CPUID_EXT_MODEL_MASK    (0xf<<16)
+typedef struct registers_t {
+    uint32_t eax;
+    uint32_t ebx;
+    uint32_t ecx;
+    uint32_t edx;
+} registers_t;
 
-inline static void cpuid_asm(int leaf, int subleaf, uint32_t where[4])
-{
-
-    asm volatile("cpuid":"=a"(where[0]),
-                         "=b"(where[1]),
-                         "=c"(where[2]),
-                         "=d"(where[2]):"0"(leaf), "2"(subleaf));
+inline static void cpuid_asm(int leaf, int subleaf, registers_t* registers) {
+    asm volatile("cpuid":"=a"(registers->eax),
+                         "=b"(registers->ebx),
+                         "=c"(registers->ecx),
+                         "=d"(registers->edx):"0"(leaf), "2"(subleaf));
 }
 
-static int is_cpu_xeon_phi_x200()
-{
-    uint32_t xeon_phi_model = (0x7<<4);
-    uint32_t xeon_phi_ext_model = (0x5<<16);
-    uint32_t registers[4];
-    uint32_t expected = xeon_phi_model | xeon_phi_ext_model;
-    cpuid_asm(1, 0, registers);
-    uint32_t actual =  registers[0] & (CPUID_MODEL_MASK | CPUID_EXT_MODEL_MASK);
+#define CPUID_MODEL_SHIFT       (4)
+#define CPUID_MODEL_MASK        (0xf)
+#define CPUID_EXT_MODEL_MASK    (0xf)
+#define CPUID_EXT_MODEL_SHIFT   (16)
+#define CPUID_FAMILY_MASK       (0xf)
+#define CPUID_FAMILY_SHIFT      (8)
+#define CPU_MODEL_KNL           (0x57)
+#define CPU_MODEL_KNM           (0x85)
+#define CPU_FAMILY_INTEL        (0x06)
 
-    if (actual == expected) {
-        return 0;
-    }
+typedef struct {
+    uint32_t model;
+    uint32_t family;
+} cpu_model_data_t;
 
-    return -1;
+static cpu_model_data_t get_cpu_model_data() {
+    registers_t registers;
+    cpuid_asm(1, 0, &registers);
+    uint32_t model = (registers.eax >> CPUID_MODEL_SHIFT) & CPUID_MODEL_MASK;
+    uint32_t model_ext = (registers.eax >> CPUID_EXT_MODEL_SHIFT) & CPUID_EXT_MODEL_MASK;
+
+    cpu_model_data_t data;
+    data.model = model | (model_ext << 4);
+    data.family = (registers.eax >> CPUID_FAMILY_SHIFT) & CPUID_FAMILY_MASK;
+    return data;
 }
 
-///This function tries to fill bandwidth array based on knowledge about known CPU models
-static int fill_bandwidth_values_heuristically(int* bandwidth, int bandwidth_len)
-{
-    int ret = MEMKIND_ERROR_UNAVAILABLE; // Default error returned if heuristic aproach fails
-    int i, nodes_num, memory_only_nodes_num = 0;
-    struct bitmask *memory_only_nodes, *node_cpus;
+static bool is_hbm_supported(cpu_model_data_t cpu) {
+    return cpu.family == CPU_FAMILY_INTEL &&
+        (cpu.model == CPU_MODEL_KNL || cpu.model == CPU_MODEL_KNM);
+}
 
-    if (is_cpu_xeon_phi_x200() == 0) {
-        nodes_num = numa_num_configured_nodes();
+static int get_high_bandwidth_nodes(struct bitmask* hbw_node_mask) {
+    int nodes_num = numa_num_configured_nodes();
+    // Check if NUMA configuration is supported.
+    if(nodes_num == 2 || nodes_num == 4 || nodes_num == 8) {
+        struct bitmask* node_cpus = numa_allocate_cpumask();
 
-        // Checking if number of numa-nodes meets expectations for
-        // supported configurations of Intel Xeon Phi x200
-        if( nodes_num != 2 && nodes_num != 4 && nodes_num!= 8 ) {
-            return ret;
-        }
-
-        memory_only_nodes = numa_allocate_nodemask();
-        node_cpus = numa_allocate_nodemask();
-
+        assert(hbw_node_mask->size >= nodes_num);
+        assert(node_cpus->size >= nodes_num);
+        int i;
         for(i=0; i<nodes_num; i++) {
             numa_node_to_cpus(i, node_cpus);
             if(numa_bitmask_weight(node_cpus) == 0) {
-                memory_only_nodes_num++;
-                numa_bitmask_setbit(memory_only_nodes, i);
+                //NUMA nodes without CPU are HBW nodes.
+                numa_bitmask_setbit(hbw_node_mask, i);
             }
         }
 
-        // Checking if number of memory-only nodes is equal number of memory+cpu nodes
-        // If it pass we are changing ret to 0 (success) and filling bw table 
-        if ( memory_only_nodes_num == (nodes_num - memory_only_nodes_num) ) {
-
-            ret = 0;
-            assign_arbitrary_bandwidth_values(bandwidth, bandwidth_len, memory_only_nodes);
-        }
-
-        numa_bitmask_free(memory_only_nodes);
         numa_bitmask_free(node_cpus);
+
+        if(2*numa_bitmask_weight(hbw_node_mask) == nodes_num) {
+            return 0;
+        }
     }
 
+    return MEMKIND_ERROR_UNAVAILABLE;
+}
+
+static int fill_bandwidth(int* bandwidth, int bandwidth_len) {
+    struct bitmask* hbw_node_mask = numa_allocate_nodemask();
+    int ret = get_high_bandwidth_nodes(hbw_node_mask);
+    if(ret == 0) {
+        assign_arbitrary_bandwidth_values(bandwidth, bandwidth_len, hbw_node_mask);
+    }
+    numa_bitmask_free(hbw_node_mask);
+
     return ret;
+}
+
+///This function tries to fill bandwidth array based on knowledge about known CPU models
+static int fill_bandwidth_values_heuristically(int* bandwidth, int bandwidth_len) {
+    cpu_model_data_t cpu = get_cpu_model_data();
+
+    if(!is_hbm_supported(cpu)) {
+        return MEMKIND_ERROR_UNAVAILABLE;
+    }
+
+    switch(cpu.model) {
+        case CPU_MODEL_KNL:
+        case CPU_MODEL_KNM: {
+                int ret = fill_bandwidth(bandwidth, bandwidth_len);
+                if(ret == 0) {
+                    log_info("Detected High Bandwidth Memory.");
+                }
+                return ret;
+            }
+        default:
+            return MEMKIND_ERROR_UNAVAILABLE;
+    }
 }
 
 static int fill_bandwidth_values_from_enviroment(int* bandwidth, int bandwidth_len, char *hbw_nodes_env)
@@ -347,6 +369,7 @@ static int fill_bandwidth_values_from_enviroment(int* bandwidth, int bandwidth_l
     struct bitmask *hbw_nodes_bm = numa_parse_nodestring(hbw_nodes_env);
 
     if (!hbw_nodes_bm) {
+        log_err("Wrong MEMKIND_HBW_NODES environment value.");
         return MEMKIND_ERROR_ENVIRON;
     }
     else {
@@ -363,6 +386,7 @@ static int fill_nodes_bandwidth(int* bandwidth, int bandwidth_len)
 
         hbw_nodes_env = getenv("MEMKIND_HBW_NODES");
         if (hbw_nodes_env) {
+            log_info("Environment variable MEMKIND_HBW_NODES detected: %s.", hbw_nodes_env);
             return fill_bandwidth_values_from_enviroment(bandwidth, bandwidth_len, hbw_nodes_env);
         }
 
@@ -376,6 +400,7 @@ static void memkind_hbw_closest_numanode_init(void)
     int *bandwidth = NULL;
     int num_unique = 0;
     int high_bandwidth = 0;
+    int i;
 
     struct bandwidth_nodes_t *bandwidth_nodes = NULL;
 
@@ -385,6 +410,7 @@ static void memkind_hbw_closest_numanode_init(void)
 
     if (!(g->closest_numanode && bandwidth)) {
         g->init_err = MEMKIND_ERROR_MALLOC;
+        log_err("jemk_malloc() failed.");
         goto exit;
     }
 
@@ -406,6 +432,11 @@ static void memkind_hbw_closest_numanode_init(void)
     g->init_err = set_closest_numanode(num_unique, bandwidth_nodes,
                                        high_bandwidth, g->num_cpu,
                                        g->closest_numanode);
+
+    for(i=0; i<bandwidth_nodes[num_unique-1].num_numanodes; i++) {
+        log_info("NUMA node %d is high-bandwidth memory.",
+                 bandwidth_nodes[num_unique-1].numanodes[i]);
+    }
 
 exit:
 
@@ -446,6 +477,7 @@ static int create_bandwidth_nodes(int num_bandwidth, const int *bandwidth,
                                      num_bandwidth);
     if (!numanode_bandwidth) {
         err = MEMKIND_ERROR_MALLOC;
+        log_err("jemk_malloc() failed.");
     }
     if (!err) {
         /* set sorting array */
@@ -477,10 +509,11 @@ static int create_bandwidth_nodes(int num_bandwidth, const int *bandwidth,
         }
         /* allocate output array */
         *bandwidth_nodes = (struct bandwidth_nodes_t*)jemk_malloc(
-                               sizeof(struct bandwidth_nodes_t) **num_unique +
+                               sizeof(struct bandwidth_nodes_t) * (*num_unique) +
                                sizeof(int) * num_bandwidth);
         if (!*bandwidth_nodes) {
             err = MEMKIND_ERROR_MALLOC;
+            log_err("jemk_malloc() failed.");
         }
     }
     if (!err) {
@@ -567,7 +600,7 @@ static int set_closest_numanode(int num_unique,
                 }
             }
             if (!min_unique) {
-                err = MEMKIND_ERROR_TIEDISTANCE;
+                err = MEMKIND_ERROR_RUNTIME;
             }
         }
     }
@@ -590,42 +623,27 @@ static int numanode_bandwidth_compare(const void *a, const void *b)
     return result;
 }
 
-void memkind_hbw_init_once(void)
+MEMKIND_EXPORT void memkind_hbw_init_once(void)
 {
-    int err = memkind_arena_create_map(MEMKIND_HBW);
-    assert(err == 0);
-    err = numa_available();
-    assert(err == 0);
+    memkind_init(MEMKIND_HBW, true);
 }
 
-void memkind_hbw_hugetlb_init_once(void)
+MEMKIND_EXPORT void memkind_hbw_hugetlb_init_once(void)
 {
-    int err = memkind_arena_create_map(MEMKIND_HBW_HUGETLB);
-    assert(err == 0);
-    err = numa_available();
-    assert(err == 0);
+    memkind_init(MEMKIND_HBW_HUGETLB, true);
 }
 
-void memkind_hbw_preferred_init_once(void)
+MEMKIND_EXPORT void memkind_hbw_preferred_init_once(void)
 {
-    int err = memkind_arena_create_map(MEMKIND_HBW_PREFERRED);
-    assert(err == 0);
-    err = numa_available();
-    assert(err == 0);
+    memkind_init(MEMKIND_HBW_PREFERRED, true);
 }
 
-void memkind_hbw_preferred_hugetlb_init_once(void)
+MEMKIND_EXPORT void memkind_hbw_preferred_hugetlb_init_once(void)
 {
-    int err = memkind_arena_create_map(MEMKIND_HBW_PREFERRED_HUGETLB);
-    assert(err == 0);
-    err = numa_available();
-    assert(err == 0);
+    memkind_init(MEMKIND_HBW_PREFERRED_HUGETLB, true);
 }
 
-void memkind_hbw_interleave_init_once(void)
+MEMKIND_EXPORT void memkind_hbw_interleave_init_once(void)
 {
-    int err = memkind_arena_create_map(MEMKIND_HBW_INTERLEAVE);
-    assert(err == 0);
-    err = numa_available();
-    assert(err == 0);
+    memkind_init(MEMKIND_HBW_INTERLEAVE, true);
 }

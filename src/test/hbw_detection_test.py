@@ -23,45 +23,22 @@
 #
 
 import pytest
-import os
-import tempfile
-import subprocess
+
+from distutils.spawn import find_executable
+from python_framework import CMD_helper
 
 class Test_hbw_detection(object):
-    binary_path = "/usr/bin/memkind-hbw-nodes"
+    binary_path = find_executable("memkind-hbw-nodes")
+    environ_err_test = "../environ_err_hbw_malloc_test"
+    expected_libnuma_warning = "libnuma: Warning: node argument -1 is out of range\n\n"
     fail_msg = "Test failed with:\n {0}"
-
-    def execute_cmd(self, command, sudo=False):
-        if sudo:
-            command = "sudo {0}".format(command)
-        """ Initialize temp file for stdout. Will be removed when closed. """
-        outfile = tempfile.SpooledTemporaryFile()
-        try:
-            """ Invoke process """
-            p = subprocess.Popen(command, stdout=outfile, stderr=subprocess.STDOUT, shell=True)
-            p.communicate()
-            """ Read stdout from file """
-            outfile.seek(0)
-            stdout = outfile.read()
-            outfile.close()
-        except:
-            raise
-        finally:
-            """ Make sure the file is closed """
-            outfile.close()
-        retcode = p.returncode
-        return stdout, retcode
-
-    def get_command_path(self, binary):
-        """ Get the path to the binary. """
-        path = os.path.dirname(os.path.abspath(__file__))
-        return os.path.join(path, binary)
+    cmd_helper = CMD_helper()
 
     def get_nodemask_default(self):
         """ This function executes memkind function 'get_mbind_nodemask' and returns its output """
         hbw_nodemask_default = None
-        command = self.get_command_path(self.binary_path)
-        output, retcode = self.execute_cmd(command, sudo=False)
+        command = self.cmd_helper.get_command_path(self.binary_path)
+        output, retcode = self.cmd_helper.execute_cmd(command, sudo=False)
         if retcode == 0:
             hbw_nodemask_default = output
             print "Nodemask detected in test_hbw_detection_default: {0}".format(hbw_nodemask_default)
@@ -72,25 +49,34 @@ class Test_hbw_detection(object):
         """ This function overrides environment variable MEMKIND_HBW_NODES with values returned from 'memkind-hbw-nodes',
         executes memkind function 'get_mbind_nodemask' and returns its output """
         hbw_nodemask_env_variable = None
-        command = "MEMKIND_HBW_NODES=`memkind-hbw-nodes` " + self.get_command_path(self.binary_path)
-        output, retcode = self.execute_cmd(command, sudo=False)
+        command = "MEMKIND_HBW_NODES=`memkind-hbw-nodes` " + self.cmd_helper.get_command_path(self.binary_path)
+        output, retcode = self.cmd_helper.execute_cmd(command, sudo=False)
         if retcode == 0:
             hbw_nodemask_env_variable = output
             print "Nodemask detected in test_hbw_detection_env_variable: {0}".format(hbw_nodemask_env_variable)
         assert retcode == 0, self.fail_msg.format("Error: hbw_nodemask returned {0}".format(retcode))
         return hbw_nodemask_env_variable
 
-    def test_hbw_detection_default(self):
+    def test_TC_MEMKIND_hbw_detection_default(self):
         """ This test checks whether hbw_nodemask_default is not None """
         assert self.get_nodemask_default() is not None, self.fail_msg.format("Error: hbw_nodemask_default is None")
 
-    def test_hbw_detection_env_variable(self):
+    def test_TC_MEMKIND_hbw_detection_env_variable(self):
         """ This test checks whether hbw_nodemask_env_variable is not None """
         assert self.get_nodemask_env_variable() is not None, self.fail_msg.format("Error: hbw_nodemask_env_variable is None")
 
-    def test_hbw_detection_compare_nodemask_default_and_env_variable(self):
+    def test_TC_MEMKIND_hbw_detection_compare_nodemask_default_and_env_variable(self):
         """ This test checks whether hbw_nodemask_default and hbw_nodemask_env_variable has the same value """
         hbw_nodemask_default = self.get_nodemask_default()
         hbw_nodemask_env_variable = self.get_nodemask_env_variable()
-        assert hbw_nodemask_default == hbw_nodemask_env_variable, self.fail_msg.format("Error: Nodemask hbw_nodemask_default ({0}) is not the same as nodemask hbw_nodemask_env_variable ({1})".format(hbw_nodemask_default, hbw_nodemask_env_variable))
+        assert hbw_nodemask_default == hbw_nodemask_env_variable, self.fail_msg.format("Error: Nodemask hbw_nodemask_default ({0}) " \
+               "is not the same as nodemask hbw_nodemask_env_variable ({1})".format(hbw_nodemask_default, hbw_nodemask_env_variable))
 
+    def test_TC_MEMKIND_hbw_detection_negative_hbw_malloc(self):
+        """ This test sets usupported value of MEMKIND_HBW_NODES, then try to perform a successfull allocation from DRAM using hbw_malloc()
+        thanks to default HBW_POLICY_PREFERRED policy """
+        command = "MEMKIND_HBW_NODES=-1 " + self.cmd_helper.get_command_path(self.environ_err_test)
+        output, retcode = self.cmd_helper.execute_cmd(command, sudo=False)
+        assert retcode != 0, self.fail_msg.format("Error: hbw_nodemask returned {0} with output {1}".format(retcode, output))
+        assert self.expected_libnuma_warning == output, self.fail_msg.format("Error: expected libnuma warning ({0}) " \
+               "was not found (output: {1})").format(self.expected_libnuma_warning, output)

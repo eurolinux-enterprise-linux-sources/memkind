@@ -22,11 +22,14 @@
  * ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
+#include <memkind/internal/memkind_hbw.h>
+#include "allocator_perf_tool/HugePageOrganizer.hpp"
+
 #include "trial_generator.h"
 #include "check.h"
 #include <vector>
 #include <numa.h>
-#include <memkind/internal/memkind_hbw.h>
+#include <numaif.h>
 
 void TrialGenerator :: generate_incremental(alloc_api_t api)
 {
@@ -59,7 +62,7 @@ void TrialGenerator :: generate_incremental(alloc_api_t api)
 void TrialGenerator :: generate_recycle_incremental(alloc_api_t api)
 {
 
-    size_t size[] = {2*MB, 2*GB};
+    size_t size[] = {2*MB, 1*GB};
     int k = 0;
     trial_vec.clear();
     for (int i = 0; i < (int)(sizeof(size)/sizeof(size[0]));
@@ -101,7 +104,6 @@ trial_t TrialGenerator :: create_trial_tuple(alloc_api_t api,
     ltrial.page_size = page_size;
     ltrial.memkind = memkind;
     ltrial.free_index = free_index;
-    ltrial.test = MEMALLOC;
     return ltrial;
 }
 
@@ -122,7 +124,7 @@ void TrialGenerator :: generate_gb (alloc_api_t api, int number_of_gb_pages, mem
     for (int i = 0; i< (int)sizes_to_alloc.size(); i++)
     {
         trial_vec.push_back(create_trial_tuple(api, sizes_to_alloc[i],
-                                               align, GB,
+                                               align, 2*MB,
                                                memkind,
                                                -1));
         if (i > 0)
@@ -138,63 +140,9 @@ int n_random(int i)
     return random() % i;
 }
 
-void TrialGenerator :: generate_multi_app_stress(int num_types, test_t test)
-{
-    int i;
-    int num_trials = 1000;
-    int index = 0;
-    int k = 0;
-    int num_alloc = 0;
-    memkind_t kind;
-
-    srandom(0);
-    trial_vec.clear();
-    for (i = 0; i < num_trials; i++) {
-        if (n_random(3) || num_alloc == 0) {
-            memkind_get_kind_by_partition(n_random(num_types), &kind);
-            trial_t ltrial = create_trial_tuple(MEMKIND_MALLOC,
-                                                n_random(8*MB - 1) + 1,
-                                                0, 2097152,
-                                                kind,
-                                                k++);
-            if (test == DATACHECK) ltrial.test = DATACHECK;
-            trial_vec.push_back(ltrial);
-            num_alloc++;
-        }
-        else {
-            index = n_random(trial_vec.size());
-            while (trial_vec[index].api == MEMKIND_FREE ||
-                   trial_vec[index].free_index == -1) {
-                index = n_random(trial_vec.size());
-            }
-            trial_vec.push_back(create_trial_tuple(MEMKIND_FREE,
-                                                   0,
-                                                   0, 2097152,
-                                                   trial_vec[index].memkind,
-                                                   trial_vec[index].free_index));
-            trial_vec[index].free_index = -1;
-            k++;
-            num_alloc--;
-        }
-    }
-
-    /* Adding free's for remaining malloc's*/
-    for (i = 0; i <(int) trial_vec.size(); i++) {
-        if (trial_vec[i].api != MEMKIND_FREE &&
-            trial_vec[i].free_index > 0) {
-            trial_t ltrial = create_trial_tuple(MEMKIND_FREE,
-                                                0, 0, 2097152,
-                                                trial_vec[i].memkind,
-                                                trial_vec[i].free_index);
-            trial_vec[i].free_index = -1;
-            trial_vec.push_back(ltrial);
-        }
-    }
-}
-
 void TrialGenerator :: generate_recycle_psize_2GB(alloc_api_t api)
 {
-
+    ASSERT_HUGEPAGES_AVAILABILITY();
     trial_vec.clear();
     trial_vec.push_back(create_trial_tuple(api, 2*GB, 32, 4096,
                                            MEMKIND_HBW,-1));
@@ -209,7 +157,7 @@ void TrialGenerator :: generate_recycle_psize_2GB(alloc_api_t api)
 
 void TrialGenerator :: generate_recycle_psize_incremental(alloc_api_t api)
 {
-
+    ASSERT_HUGEPAGES_AVAILABILITY();
     size_t size[] = {2*KB, 2*MB};
 
     int k = 0;
@@ -321,7 +269,7 @@ void TrialGenerator :: print()
 }
 
 
-void TrialGenerator :: run(int num_bandwidth, int *bandwidth)
+void TrialGenerator :: run(int num_bandwidth, std::vector<int> &bandwidth)
 {
 
     int num_trial = trial_vec.size();
@@ -448,18 +396,15 @@ void TrialGenerator :: run(int num_bandwidth, int *bandwidth)
             ASSERT_TRUE(ptr_vec[i] != NULL);
             memset(ptr_vec[i], 0, trial_vec[i].size);
             Check check(ptr_vec[i], trial_vec[i]);
-            if (trial_vec[i].test == DATACHECK) {
-                EXPECT_EQ(0, check.check_data(0x0A));
-            }
             if (trial_vec[i].memkind != MEMKIND_DEFAULT &&
                 trial_vec[i].memkind != MEMKIND_HUGETLB &&
                 trial_vec[i].memkind != MEMKIND_GBTLB) {
                 if (trial_vec[i].memkind == MEMKIND_HBW_INTERLEAVE) {
-                    EXPECT_EQ(0, check.check_node_hbw_interleave(num_bandwidth, bandwidth));
+                    check.check_hbw_numa_nodes(MPOL_INTERLEAVE);
                     EXPECT_EQ(0, check.check_page_size(trial_vec[i].page_size));
                 }
                 else {
-                    EXPECT_EQ(0, check.check_node_hbw(num_bandwidth, bandwidth));
+                    check.check_node_hbw();
                 }
             }
             if (trial_vec[i].api == HBW_CALLOC) {
@@ -490,30 +435,26 @@ void TGTest :: SetUp()
 {
     size_t node;
     char *hbw_nodes_env, *endptr;
-    tgen = new TrialGenerator();
+    tgen = std::move(std::unique_ptr<TrialGenerator>(new TrialGenerator()));
 
     hbw_nodes_env = getenv("MEMKIND_HBW_NODES");
     if (hbw_nodes_env) {
         num_bandwidth = 128;
-        bandwidth = new int[num_bandwidth];
         for (node = 0; node < num_bandwidth; node++) {
-            bandwidth[node] = 1;
+            bandwidth.push_back(1);
         }
         node = strtol(hbw_nodes_env, &endptr, 10);
-        bandwidth[node] = 2;
+        bandwidth.push_back(2);
         while (*endptr == ':') {
             hbw_nodes_env = endptr + 1;
             node = strtol(hbw_nodes_env, &endptr, 10);
             if (endptr != hbw_nodes_env && node >= 0 && node < num_bandwidth) {
-                bandwidth[node] = 2;
+                bandwidth.push_back(2);
             }
         }
     }
     else {
-
         num_bandwidth = NUMA_NUM_NODES;
-        bandwidth = new int[num_bandwidth];
-
         nodemask_t nodemask;
         struct bitmask nodemask_bm = {NUMA_NUM_NODES, nodemask.n};
         numa_bitmask_clearall(&nodemask_bm);
@@ -523,22 +464,17 @@ void TGTest :: SetUp()
         int i, nodes_num = numa_num_configured_nodes();
         for (i=0; i<NUMA_NUM_NODES; i++) {
             if (i >= nodes_num) {
-                bandwidth[i] = 0;
+                bandwidth.push_back(0);
             }
             else if (numa_bitmask_isbitset(&nodemask_bm, i)) {
-                bandwidth[i] = 2;
+                bandwidth.push_back(2);
             }
             else {
-                bandwidth[i] = 1;
+                bandwidth.push_back(1);
             }
         }
-
-
     }
 }
 
 void TGTest :: TearDown()
-{
-    delete[] bandwidth;
-    delete tgen;
-}
+{}

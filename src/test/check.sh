@@ -24,16 +24,37 @@
 #
 err=0
 basedir="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
-if [ ! -z "$TEST_HOST" ] && [ ! -z "$TEST_LOGIN" ] && [ ! -z "$TEST_RPMDIR" ]; then
-    $basedir/test_remote.sh $TEST_RPMDIR $TEST_LOGIN $TEST_HOST $TEST_OUTDIR $TEST_SSHID
-    err=$?
-else
-    if [ -z "$TEST_OUTDIR" ]; then
-        TEST_OUTDIR=gtest_output
-    fi
-    mkdir -p $TEST_OUTDIR
-    $basedir/test.sh --gtest_output=xml:$TEST_OUTDIR/ 2>&1| tee $TEST_OUTDIR/test.out
-    err=${PIPESTATUS[0]}
+
+# Check if 2MB pages are enabled on system
+nr_hugepages=$(cat /proc/sys/vm/nr_hugepages)
+nr_overcommit_hugepages=$(cat /proc/sys/vm/nr_overcommit_hugepages)
+if [[ "$nr_hugepages" == "0" ]] && [[ "$nr_overcommit_hugepages" == "0" ]]; then
+        # Add parameter that disables tests that require 2MB pages
+        params=" -m"
 fi
+
+# Check if MCDRAM nodes exists on system
+if [ ! -x /usr/bin/memkind-hbw-nodes ]; then
+        if [ -x ./memkind-hbw-nodes ]; then
+                export PATH=$PATH:$PWD
+        else
+                echo "Cannot find 'memkind-hbw-nodes' in $PWD. Did you run 'make'?"
+                exit 1
+        fi
+fi
+ret=$(memkind-hbw-nodes)
+if [[ $ret == "" ]]; then
+        # Add parameter that disables tests that detects high bandwidth nodes
+        params=$params" -d"
+fi
+
+if [[ -n $DISABLE_TESTS ]]; then
+        echo "On demand test disabling detected!"
+        params="$params -x $DISABLE_TESTS"
+fi
+
+$basedir/test.sh $params
+
+err=${PIPESTATUS[0]}
 
 exit $err

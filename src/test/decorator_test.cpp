@@ -23,8 +23,10 @@
  */
 
 #include "memkind.h"
+
 #include "common.h"
 #include "decorator_test.h"
+#include "config.h"
 
 size_t size = 16;
 memkind_t kind = MEMKIND_DEFAULT;
@@ -44,8 +46,9 @@ protected:
     }
 };
 
-TEST_F(DecoratorTest, DT_malloc)
+TEST_F(DecoratorTest, test_TC_MEMKIND_DT_malloc)
 {
+#ifdef MEMKIND_DECORATION_ENABLED
     void *buffer = memkind_malloc(kind, size);
 
     ASSERT_TRUE(buffer != NULL);
@@ -53,10 +56,12 @@ TEST_F(DecoratorTest, DT_malloc)
     EXPECT_EQ(1, decorators_state->malloc_post);
 
     memkind_free(0, buffer);
+#endif
 }
 
-TEST_F(DecoratorTest, DT_calloc)
+TEST_F(DecoratorTest, test_TC_MEMKIND_DT_calloc)
 {
+#ifdef MEMKIND_DECORATION_ENABLED
     void *buffer = memkind_calloc(kind, 1, size);
 
     ASSERT_TRUE(buffer != NULL);
@@ -64,10 +69,12 @@ TEST_F(DecoratorTest, DT_calloc)
     EXPECT_EQ(1, decorators_state->calloc_post);
 
     memkind_free(0, buffer);
+#endif
 }
 
-TEST_F(DecoratorTest, DT_posix_memalign)
+TEST_F(DecoratorTest, test_TC_MEMKIND_DT_posix_memalign)
 {
+#ifdef MEMKIND_DECORATION_ENABLED
     void *buffer;
 
     int res = memkind_posix_memalign(kind, &buffer, 8, size);
@@ -78,10 +85,12 @@ TEST_F(DecoratorTest, DT_posix_memalign)
     EXPECT_EQ(1, decorators_state->posix_memalign_post);
 
     memkind_free(0, buffer);
+#endif
 }
 
-TEST_F(DecoratorTest, DT_realloc)
+TEST_F(DecoratorTest, test_TC_MEMKIND_DT_realloc)
 {
+#ifdef MEMKIND_DECORATION_ENABLED
     void *buffer = memkind_realloc(kind, NULL, size);
 
     ASSERT_TRUE(buffer != NULL);
@@ -89,10 +98,12 @@ TEST_F(DecoratorTest, DT_realloc)
     EXPECT_EQ(1, decorators_state->realloc_post);
 
     memkind_free(0, buffer);
+#endif
 }
 
-TEST_F(DecoratorTest, DT_free)
+TEST_F(DecoratorTest, test_TC_MEMKIND_DT_free)
 {
+#ifdef MEMKIND_DECORATION_ENABLED
     void *buffer = memkind_malloc(kind, size);
 
     ASSERT_TRUE(buffer != NULL);
@@ -101,4 +112,5 @@ TEST_F(DecoratorTest, DT_free)
 
     EXPECT_EQ(1, decorators_state->free_pre);
     EXPECT_EQ(1, decorators_state->free_post);
+#endif
 }

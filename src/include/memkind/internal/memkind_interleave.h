@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2015 - 2016 Intel Corporation.
+ * Copyright (C) 2015 - 2017 Intel Corporation.
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -27,6 +27,10 @@
 extern "C" {
 #endif
 
+#ifndef MEMKIND_INTERNAL_API
+#warning "DO NOT INCLUDE THIS FILE! IT IS INTERNAL MEMKIND API AND SOON WILL BE REMOVED FROM BIN & DEVEL PACKAGES"
+#endif
+
 /*
  * Header file for the interleave memory memkind operations.
  *
@@ -36,7 +40,7 @@ extern "C" {
 
 void memkind_interleave_init_once(void);
 
-extern const struct memkind_ops MEMKIND_INTERLEAVE_OPS;
+extern struct memkind_ops MEMKIND_INTERLEAVE_OPS;
 
 #ifdef __cplusplus
 }

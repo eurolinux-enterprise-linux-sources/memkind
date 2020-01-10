@@ -23,6 +23,7 @@
  */
 
 #include <memkind/internal/memkind_hbw.h>
+
 #include <numa.h>
 #include <stdio.h>
 
@@ -56,6 +57,8 @@ const char* help_message =
     "SEE ALSO\n"
     "    hbwmalloc(3), memkind(3)\n"
     "\n";
+
+extern unsigned int numa_bitmask_weight(const struct bitmask *bmp );
 
 int print_hbw_nodes()
 {

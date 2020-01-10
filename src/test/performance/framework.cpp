@@ -22,6 +22,10 @@
 * ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 */
 
+#include <algorithm> // sort
+#include <math.h> // log2
+#include <cassert>
+#include <iostream>
 #include "framework.hpp"
 
 namespace performance_tests
@@ -270,20 +274,22 @@ namespace performance_tests
         setlocale(LC_ALL, "");
         if (!fileName.empty())
         {
-            FILE* f = fopen(fileName.c_str(), "a+");
-
-            fprintf(f,
-                "%s;%s;%zu;%zu;%lu;%f;%f;%f;%f\n",
-                suiteName.c_str(),
-                caseName.c_str(),
-                m_repeatsCount,
-                m_threadsCount,
-                metrics.executedOperations,
-                metrics.operationsPerSecond,
-                metrics.avgOperationDuration,
-                metrics.iterationDuration,
-                metrics.repeatDuration);
-            fclose(f);
+            FILE* f;
+            if((f = fopen(fileName.c_str(), "a+")))
+            {
+                fprintf(f,
+                    "%s;%s;%zu;%zu;%lu;%f;%f;%f;%f\n",
+                    suiteName.c_str(),
+                    caseName.c_str(),
+                    m_repeatsCount,
+                    m_threadsCount,
+                    metrics.executedOperations,
+                    metrics.operationsPerSecond,
+                    metrics.avgOperationDuration,
+                    metrics.iterationDuration,
+                    metrics.repeatDuration);
+                fclose(f);
+            }
 
         }
         printf("Operations/sec:\t\t\t%'f\n"

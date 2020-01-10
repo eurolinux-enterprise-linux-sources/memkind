@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2015 - 2016 Intel Corporation.
+ * Copyright (C) 2015 - 2017 Intel Corporation.
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -22,11 +22,13 @@
  * ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
+#include <memkind/internal/memkind_pmem.h>
+#include <memkind/internal/memkind_private.h>
+
 #include <sys/param.h>
 #include <sys/mman.h>
 #include <stdio.h>
 #include "common.h"
-#include <memkind/internal/memkind_pmem.h>
 
 static const size_t PMEM_PART_SIZE = MEMKIND_PMEM_MIN_SIZE + 4096;
 static const char*  PMEM_DIR = "/tmp/";
@@ -49,13 +51,20 @@ protected:
     {}
 };
 
+static void pmem_get_size(struct memkind *kind, size_t& total, size_t& free)
+{
+    struct memkind_pmem *priv = reinterpret_cast<struct memkind_pmem *>(kind->priv);
 
-TEST_F(MemkindPmemTests, PmemPriv)
+    total = priv->max_size;
+    free = priv->max_size - priv->offset; /* rough estimation */
+}
+
+TEST_F(MemkindPmemTests, test_TC_MEMKIND_PmemPriv)
 {
     size_t total_mem = 0;
     size_t free_mem = 0;
 
-    memkind_get_size(pmem_kind, &total_mem, &free_mem);
+    pmem_get_size(pmem_kind, total_mem, free_mem);
 
     ASSERT_TRUE(total_mem != 0);
     ASSERT_TRUE(free_mem != 0);
@@ -67,7 +76,7 @@ TEST_F(MemkindPmemTests, PmemPriv)
     EXPECT_LT(offset, total_mem);
 }
 
-TEST_F(MemkindPmemTests, PmemMalloc)
+TEST_F(MemkindPmemTests, test_TC_MEMKIND_PmemMalloc)
 {
     const size_t size = 1024;
     char *default_str = NULL;
@@ -85,7 +94,7 @@ TEST_F(MemkindPmemTests, PmemMalloc)
     EXPECT_EQ(NULL, default_str);
 }
 
-TEST_F(MemkindPmemTests, PmemCalloc)
+TEST_F(MemkindPmemTests, test_TC_MEMKIND_PmemCalloc)
 {
     const size_t size = 1024;
     const size_t num = 1;
@@ -111,27 +120,33 @@ TEST_F(MemkindPmemTests, PmemCalloc)
     memkind_free(pmem_kind, default_str);
 }
 
-TEST_F(MemkindPmemTests, PmemGetSize)
+TEST_F(MemkindPmemTests, test_TC_MEMKIND_PmemCallocHuge)
 {
-    const size_t size = 512;
+    const size_t size = CHUNK_SIZE;
+    const size_t num = 1;
     char *default_str = NULL;
-    int err = 0;
-    size_t total;
-    size_t free;
 
-    default_str = (char *)memkind_malloc(pmem_kind, size);
+    default_str = (char *)memkind_calloc(pmem_kind, num, size);
     EXPECT_TRUE(NULL != default_str);
+    EXPECT_EQ(*default_str, 0);
 
-    err = memkind_get_size(pmem_kind, &total, &free);
-    EXPECT_EQ(0, err);
+    sprintf(default_str, "memkind_calloc MEMKIND_PMEM\n");
+    printf("%s", default_str);
 
-    // requested PMEM partition size is internally aligned to 4MB
-    EXPECT_EQ(total, (size_t)roundup(PMEM_PART_SIZE, CHUNK_SIZE));
+    memkind_free(pmem_kind, default_str);
+
+    // allocate the buffer of the same size (likely at the same address)
+    default_str = (char *)memkind_calloc(pmem_kind, num, size);
+    EXPECT_TRUE(NULL != default_str);
+    EXPECT_EQ(*default_str, 0);
+
+    sprintf(default_str, "memkind_calloc MEMKIND_PMEM\n");
+    printf("%s", default_str);
 
     memkind_free(pmem_kind, default_str);
 }
 
-TEST_F(MemkindPmemTests, PmemRealloc)
+TEST_F(MemkindPmemTests, test_TC_MEMKIND_PmemRealloc)
 {
     const size_t size1 = 512;
     const size_t size2 = 1024;

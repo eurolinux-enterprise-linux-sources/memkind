@@ -22,13 +22,14 @@
  * ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
+#include "memkind.h"
+
 #include <fstream>
 #include <algorithm>
 
 #include "common.h"
 #include "check.h"
 #include "omp.h"
-#include "memkind.h"
 #include "trial_generator.h"
 
 #define NTHREADS 2
@@ -41,7 +42,7 @@ class MultithreadedTest : public TGTest
 {
 };
 
-TEST_F(MultithreadedTest, TC_Memkind_Multithread_HBW_Malloc_2bytes_2KB_2MB_sizes)
+TEST_F(MultithreadedTest, test_TC_MEMKIND_Multithread_HBW_Malloc_2bytes_2KB_2MB_sizes)
 {
     tgen->generate_size_2bytes_2KB_2MB(HBW_MALLOC);
     #pragma omp parallel num_threads(NTHREADS)
@@ -51,7 +52,7 @@ TEST_F(MultithreadedTest, TC_Memkind_Multithread_HBW_Malloc_2bytes_2KB_2MB_sizes
     }
 }
 
-TEST_F(MultithreadedTest, TC_Memkind_Multithread_HBW_Calloc_2bytes_2KB_2MB_sizes)
+TEST_F(MultithreadedTest, test_TC_MEMKIND_Multithread_HBW_Calloc_2bytes_2KB_2MB_sizes)
 {
     tgen->generate_size_2bytes_2KB_2MB(HBW_CALLOC);
     #pragma omp parallel num_threads(NTHREADS)
@@ -61,7 +62,7 @@ TEST_F(MultithreadedTest, TC_Memkind_Multithread_HBW_Calloc_2bytes_2KB_2MB_sizes
     }
 }
 
-TEST_F(MultithreadedTest, TC_Memkind_Multithread_HBW_Memalign_2bytes_2KB_2MB_sizes)
+TEST_F(MultithreadedTest, test_TC_MEMKIND_Multithread_HBW_Memalign_2bytes_2KB_2MB_sizes)
 {
     tgen->generate_size_2bytes_2KB_2MB(HBW_MEMALIGN);
     #pragma omp parallel num_threads(NTHREADS)
@@ -71,7 +72,7 @@ TEST_F(MultithreadedTest, TC_Memkind_Multithread_HBW_Memalign_2bytes_2KB_2MB_siz
     }
 }
 
-TEST_F(MultithreadedTest, TC_Memkind_Multithread_HBW_MemalignPsize_2bytes_2KB_2MB_sizes)
+TEST_F(MultithreadedTest, test_TC_MEMKIND_Multithread_HBW_MemalignPsize_2bytes_2KB_2MB_sizes)
 {
     tgen->generate_size_2bytes_2KB_2MB(HBW_MEMALIGN_PSIZE);
     #pragma omp parallel num_threads(NTHREADS)

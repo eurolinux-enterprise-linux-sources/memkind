@@ -46,7 +46,7 @@ License: BSD-2-Clause
 Group: System Environment/Libraries
 URL: http://memkind.github.io/memkind
 BuildRoot: %{_tmppath}/%{name}-%{version}-%{release}-root-%(%{__id_u} -n)
-BuildRequires: automake libtool
+BuildRequires: automake libtool gcc-c++ unzip
 %if %{defined suse_version}
 BuildRequires: libnuma-devel
 %else
@@ -56,7 +56,7 @@ BuildRequires: numactl-devel
 Prefix: %{_prefix}
 Prefix: %{_unitdir}
 Obsoletes: memkind
-Provides: memkind
+Provides: memkind libmemkind0
 
 %define namespace memkind
 
@@ -119,44 +119,28 @@ memkind functional tests
 %setup -q -a 0 -n $(name)-%{version}
 
 %build
-
 # It is required that we configure and build the jemalloc subdirectory
 # before we configure and start building the top level memkind directory.
 # To ensure the memkind build step is able to discover the output
 # of the jemalloc build we must create an 'obj' directory, and build
 # from within that directory.
-cd %{_builddir}/%{buildsubdir}/jemalloc/
-echo %{version} > %{_builddir}/%{buildsubdir}/jemalloc/VERSION
-test -f configure || %{__autoconf}
-mkdir %{_builddir}/%{buildsubdir}/jemalloc/obj
-ln -s %{_builddir}/%{buildsubdir}/jemalloc/configure %{_builddir}/%{buildsubdir}/jemalloc/obj/
-cd %{_builddir}/%{buildsubdir}/jemalloc/obj
-../configure --enable-autogen --with-jemalloc-prefix=jemk_ --enable-memkind \
-             --enable-cc-silence \
-             --prefix=%{_prefix} --includedir=%{_includedir} --libdir=%{_libdir} \
-             --bindir=%{_bindir} --docdir=%{_docdir} --mandir=%{_mandir}
-$(make_prefix)%{__make} %{?_smp_mflags} $(make_postfix)
 
-# Build memkind lib and tools
 cd %{_builddir}/%{buildsubdir}
 echo %{version} > %{_builddir}/%{buildsubdir}/VERSION
-test -f configure || ./autogen.sh
-./configure --prefix=%{_prefix} --libdir=%{_libdir} \
-           --includedir=%{_includedir} --sbindir=%{_sbindir} --enable-cxx11 \
-           --mandir=%{_mandir} --docdir=%{_docdir}/%{namespace}
-$(make_prefix)%{__make} %{?_smp_mflags} libgtest.a $(make_postfix)
-$(make_prefix)%{__make} %{?_smp_mflags} checkprogs $(make_postfix)
-
+./build.sh --prefix=%{_prefix} --includedir=%{_includedir} --libdir=%{_libdir} \
+           --bindir=%{_bindir} --docdir=%{_docdir}/%{namespace} --mandir=%{_mandir} --sbindir=%{_sbindir}
 
 %install
 cd %{_builddir}/%{buildsubdir}
 %{__make} DESTDIR=%{buildroot} install
 %{__install} -d %{buildroot}$(memkind_test_dir)
 %{__install} -d %{buildroot}/%{_unitdir}
-%{__install} test/.libs/* test/*.sh test/*.ts test/*.so test/*.py %{buildroot}$(memkind_test_dir)
+%{__install} -d %{buildroot}/$(memkind_test_dir)/python_framework
+%{__install} test/.libs/* test/*.sh test/*.ts test/*.py %{buildroot}$(memkind_test_dir)
+%{__install} test/python_framework/*.py %{buildroot}/$(memkind_test_dir)/python_framework
 rm -f %{buildroot}$(memkind_test_dir)/libautohbw.*
 rm -f %{buildroot}/%{_libdir}/lib%{namespace}.{l,}a
-rm -f %{buildroot}/%{_libdir}/lib{numakind,autohbw}.*
+rm -f %{buildroot}/%{_libdir}/libautohbw.{l,}a
 
 %pre
 
@@ -174,61 +158,73 @@ rm -f %{buildroot}/%{_libdir}/lib{numakind,autohbw}.*
 %doc %{_docdir}/%{namespace}/README
 %doc %{_docdir}/%{namespace}/VERSION
 %dir %{_docdir}/%{namespace}
-%dir %{_unitdir}
 %{_libdir}/lib%{namespace}.so.*
+%{_libdir}/libautohbw.so.*
 %{_bindir}/%{namespace}-hbw-nodes
 
 %define internal_include memkind/internal
 
 %files devel
 %defattr(-,root,root,-)
+%{_includedir}
 %{_includedir}/hbwmalloc.h
 %{_includedir}/hbw_allocator.h
 %{_libdir}/lib%{namespace}.so
+%{_libdir}/libautohbw.so
 %{_includedir}/%{namespace}.h
+%{_includedir}/%{internal_include}
 %{_includedir}/%{internal_include}/%{namespace}*.h
 %{_mandir}/man3/hbwmalloc.3.*
 %{_mandir}/man3/hbwallocator.3.*
 %{_mandir}/man3/%{namespace}*.3.*
 
+%exclude %{_includedir}/%{internal_include}/%{namespace}_log.h
 
 %files tests
 %defattr(-,root,root,-)
 $(memkind_test_dir)/all_tests
-$(memkind_test_dir)/environerr_hbw_malloc_test
-$(memkind_test_dir)/mallctlerr_test
+$(memkind_test_dir)/bat_bind_tests
+$(memkind_test_dir)/bat_interleave_tests
+$(memkind_test_dir)/environ_err_hbw_malloc_test
 $(memkind_test_dir)/decorator_test
-$(memkind_test_dir)/slts_test
+$(memkind_test_dir)/freeing_memory_segfault_test
+$(memkind_test_dir)/gb_page_tests_bind_policy
+$(memkind_test_dir)/gb_page_tests_preferred_policy
 $(memkind_test_dir)/filter_memkind
-$(memkind_test_dir)/gb_realloc
 $(memkind_test_dir)/hello_hbw
 $(memkind_test_dir)/hello_memkind
 $(memkind_test_dir)/hello_memkind_debug
-$(memkind_test_dir)/new_kind
-$(memkind_test_dir)/stream
-$(memkind_test_dir)/stream_memkind
 $(memkind_test_dir)/memkind_allocated
 $(memkind_test_dir)/autohbw_candidates
 ${memkind_test_dir}/pmem
 ${memkind_test_dir}/allocator_perf_tool_tests
 ${memkind_test_dir}/perf_tool
+${memkind_test_dir}/autohbw_test_helper
+${memkind_test_dir}/trace_mechanism_test_helper
 $(memkind_test_dir)/memkind-afts.ts
 $(memkind_test_dir)/memkind-afts-ext.ts
 $(memkind_test_dir)/memkind-slts.ts
 $(memkind_test_dir)/memkind-perf.ts
-$(memkind_test_dir)/memkind-hbw_detection.ts
+$(memkind_test_dir)/memkind-perf-ext.ts
+$(memkind_test_dir)/memkind-pytests.ts
 $(memkind_test_dir)/check.sh
 $(memkind_test_dir)/test.sh
-$(memkind_test_dir)/test_remote.sh
-$(memkind_test_dir)/libfopen.so
-$(memkind_test_dir)/libmallctl.so
-$(memkind_test_dir)/libmalloc.so
-$(memkind_test_dir)/libnumadist.so
-$(memkind_test_dir)/libsched.so
 $(memkind_test_dir)/hbw_detection_test.py
+$(memkind_test_dir)/autohbw_test.py
+$(memkind_test_dir)/trace_mechanism_test.py
+$(memkind_test_dir)/python_framework
+$(memkind_test_dir)/python_framework/cmd_helper.py
+$(memkind_test_dir)/python_framework/__init__.py
+$(memkind_test_dir)/draw_plots.py
+$(memkind_test_dir)/run_alloc_benchmark.sh
+$(memkind_test_dir)/alloc_benchmark_hbw
+$(memkind_test_dir)/alloc_benchmark_glibc
+$(memkind_test_dir)/alloc_benchmark_tbb
 
 %exclude $(memkind_test_dir)/*.pyo
 %exclude $(memkind_test_dir)/*.pyc
+%exclude $(memkind_test_dir)/python_framework/*.pyo
+%exclude $(memkind_test_dir)/python_framework/*.pyc
 
 %changelog
 endef

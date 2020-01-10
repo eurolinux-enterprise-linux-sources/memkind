@@ -1,5 +1,5 @@
 /*
-* Copyright (C) 2015 - 2016 Intel Corporation.
+* Copyright (C) 2015 - 2017 Intel Corporation.
 * All rights reserved.
 *
 * Redistribution and use in source and binary forms, with or without
@@ -24,13 +24,14 @@
 
 #pragma once
 
+#include <memkind.h>
+
 #include "Allocator.hpp"
 #include "Allocation_info.hpp"
 #include "Configuration.hpp"
 #include "WrappersMacros.hpp"
 #include "FunctionCalls.hpp"
 #include <cerrno>
-#include <memkind.h>
 
 #include <stdlib.h>
 
@@ -52,7 +53,6 @@ public:
 	{
 		START_TEST(type_id, FunctionCalls::MALLOC)
 		data.ptr = memkind_malloc(kind, size);
-		data.error_code = errno;
 		END_TEST
 	}
 
@@ -60,7 +60,6 @@ public:
 	{
 		START_TEST(type_id, FunctionCalls::CALLOC)
 		data.ptr = memkind_calloc(kind, num, size);
-		data.error_code = errno;
 		END_TEST
 	}
 
@@ -68,7 +67,6 @@ public:
 	{
 		START_TEST(type_id, FunctionCalls::REALLOC)
 		data.ptr = memkind_realloc(kind, ptr, size);
-		data.error_code = errno;
 		END_TEST
 	}
 

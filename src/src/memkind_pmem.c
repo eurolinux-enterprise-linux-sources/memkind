@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2015 - 2016 Intel Corporation.
+ * Copyright (C) 2015 - 2017 Intel Corporation.
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -22,17 +22,19 @@
  * ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
+#include <memkind/internal/memkind_arena.h>
+#include <memkind/internal/memkind_pmem.h>
+#include <memkind/internal/memkind_private.h>
+#include <memkind/internal/memkind_log.h>
+
 #include <sys/mman.h>
 #include <unistd.h>
 #include <fcntl.h>
 #include <errno.h>
 #include <jemalloc/jemalloc.h>
+#include <assert.h>
 
-#include <memkind/internal/memkind_arena.h>
-#include <memkind/internal/memkind_pmem.h>
-#include <memkind/internal/memkind_private.h>
-
-const struct memkind_ops MEMKIND_PMEM_OPS = {
+MEMKIND_EXPORT struct memkind_ops MEMKIND_PMEM_OPS = {
     .create = memkind_pmem_create,
     .destroy = memkind_pmem_destroy,
     .malloc = memkind_arena_malloc,
@@ -43,26 +45,119 @@ const struct memkind_ops MEMKIND_PMEM_OPS = {
     .mmap = memkind_pmem_mmap,
     .get_mmap_flags = memkind_pmem_get_mmap_flags,
     .get_arena = memkind_thread_get_arena,
-    .get_size = memkind_pmem_get_size,
 };
 
-int memkind_pmem_create(struct memkind *kind, const struct memkind_ops *ops,
-                        const char *name)
+void *pmem_chunk_alloc(void *chunk, size_t size, size_t alignment,
+                       bool *zero, bool *commit, unsigned arena_ind)
+{
+    int err;
+    void *addr = NULL;
+
+    if (chunk != NULL) {
+        /* not supported */
+        goto exit;
+    }
+
+    struct memkind *kind;
+    kind = get_kind_by_arena(arena_ind);
+    if (kind == NULL) {
+        return NULL;
+    }
+
+    err = memkind_check_available(kind);
+    if (err) {
+        goto exit;
+    }
+
+    addr = memkind_pmem_mmap(kind, chunk, size);
+
+    if (addr != MAP_FAILED) {
+        *zero = true;
+        *commit = true;
+
+        /* XXX - check alignment */
+    } else {
+        addr = NULL;
+    }
+
+exit:
+    return addr;
+}
+
+bool pmem_chunk_dalloc(void *chunk, size_t size, bool commited,
+                        unsigned arena_ind)
+{
+    /* do nothing - report failure (opt-out) */
+    return true;
+}
+
+bool pmem_chunk_commit(void *chunk, size_t size, size_t offset, size_t length,
+                        unsigned arena_ind)
+{
+    /* do nothing - report success */
+    return false;
+}
+
+bool pmem_chunk_decommit(void *chunk, size_t size, size_t offset, size_t length,
+                          unsigned arena_ind)
+{
+    /* do nothing - report failure (opt-out) */
+    return true;
+}
+
+bool pmem_chunk_purge(void *chunk, size_t size, size_t offset, size_t length,
+                       unsigned arena_ind)
+{
+    /* do nothing - report failure (opt-out) */
+    return true;
+}
+
+bool pmem_chunk_split(void *chunk, size_t size, size_t size_a, size_t size_b,
+                       bool commited, unsigned arena_ind)
+{
+    /* do nothing - report success */
+    return false;
+}
+
+bool pmem_chunk_merge(void *chunk_a, size_t size_a, void *chunk_b,
+                       size_t size_b, bool commited, unsigned arena_ind)
+{
+    /* do nothing - report success */
+    return false;
+}
+
+static chunk_hooks_t pmem_chunk_hooks = {
+    pmem_chunk_alloc,
+    pmem_chunk_dalloc,
+    pmem_chunk_commit,
+    pmem_chunk_decommit,
+    pmem_chunk_purge,
+    pmem_chunk_split,
+    pmem_chunk_merge
+};
+
+MEMKIND_EXPORT int memkind_pmem_create(struct memkind *kind, struct memkind_ops *ops, const char *name)
 {
     struct memkind_pmem *priv;
     int err;
 
     priv = (struct memkind_pmem *)jemk_malloc(sizeof(struct memkind_pmem));
     if (!priv) {
+        log_err("jemk_malloc() failed.");
         return MEMKIND_ERROR_MALLOC;
     }
 
     if (pthread_mutex_init(&priv->pmem_lock, NULL) != 0) {
-        err = MEMKIND_ERROR_PTHREAD;
+        err = MEMKIND_ERROR_RUNTIME;
         goto exit;
     }
 
-    err = memkind_arena_create(kind, ops, name);
+    err = memkind_default_create(kind, ops, name);
+    if (err) {
+        goto exit;
+    }
+
+    err = memkind_arena_create_map(kind, &pmem_chunk_hooks);
     if (err) {
         goto exit;
     }
@@ -71,14 +166,13 @@ int memkind_pmem_create(struct memkind *kind, const struct memkind_ops *ops,
     return 0;
 
 exit:
-    if (priv) {
-        pthread_mutex_destroy(&priv->pmem_lock);
-        jemk_free(priv);
-    }
+    /* err is set, please don't overwrite it with result of pthread_mutex_destroy */
+    pthread_mutex_destroy(&priv->pmem_lock);
+    jemk_free(priv);
     return err;
 }
 
-int memkind_pmem_destroy(struct memkind *kind)
+MEMKIND_EXPORT int memkind_pmem_destroy(struct memkind *kind)
 {
     struct memkind_pmem *priv = kind->priv;
 
@@ -92,14 +186,13 @@ int memkind_pmem_destroy(struct memkind *kind)
     return 0;
 }
 
-void *memkind_pmem_mmap(struct memkind *kind, void *addr, size_t size)
+MEMKIND_EXPORT void *memkind_pmem_mmap(struct memkind *kind, void *addr, size_t size)
 {
     struct memkind_pmem *priv = kind->priv;
     void *result;
 
-    if (pthread_mutex_lock(&priv->pmem_lock)) {
-        return MAP_FAILED;
-    }
+    if (pthread_mutex_lock(&priv->pmem_lock) != 0)
+        assert(0 && "failed to acquire mutex");
 
     if (priv->offset + size > priv->max_size) {
         pthread_mutex_unlock(&priv->pmem_lock);
@@ -119,18 +212,8 @@ void *memkind_pmem_mmap(struct memkind *kind, void *addr, size_t size)
     return result;
 }
 
-int memkind_pmem_get_mmap_flags(struct memkind *kind, int *flags)
+MEMKIND_EXPORT int memkind_pmem_get_mmap_flags(struct memkind *kind, int *flags)
 {
     *flags = MAP_SHARED;
-    return 0;
-}
-
-int memkind_pmem_get_size(struct memkind *kind, size_t *total, size_t *free)
-{
-    struct memkind_pmem *priv = kind->priv;
-
-    *total = priv->max_size;
-    *free = priv->max_size - priv->offset; /* rough estimation */
-
     return 0;
 }

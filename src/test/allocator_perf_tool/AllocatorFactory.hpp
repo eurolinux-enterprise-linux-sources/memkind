@@ -1,5 +1,5 @@
 /*
-* Copyright (C) 2015 - 2016 Intel Corporation.
+* Copyright (C) 2015 - 2017 Intel Corporation.
 * All rights reserved.
 *
 * Redistribution and use in source and binary forms, with or without
@@ -23,14 +23,16 @@
 */
 #pragma once
 
+#include "memkind.h"
+
 #include "Allocator.hpp"
 #include "StandardAllocatorWithTimer.hpp"
 #include "VectorIterator.hpp"
 #include "Configuration.hpp"
 #include "JemallocAllocatorWithTimer.hpp"
 #include "MemkindAllocatorWithTimer.hpp"
+#include "HBWmallocAllocatorWithTimer.hpp"
 #include "Numastat.hpp"
-#include "memkind.h"
 
 #include <vector>
 #include <assert.h>
@@ -76,6 +78,9 @@ public:
 
 			case AllocatorTypes::JEMALLOC:
 				return &jemalloc;
+
+			case AllocatorTypes::HBWMALLOC_ALLOCATOR:
+				return &hbwmalloc_allocator;
 
 			default:
 				{
@@ -163,7 +168,7 @@ public:
 
 			do
 			{
-				index = (rand() % (AllocatorTypes::MEMKIND_HBW_PREFERRED+1));
+				index = (rand() % (AllocatorTypes::NUM_OF_ALLOCATOR_TYPES));
 			}
 			while(!allocator_calls.is_enabled(index));
 
@@ -185,6 +190,7 @@ public:
 private:
 	StandardAllocatorWithTimer standard_allocator;
 	JemallocAllocatorWithTimer jemalloc;
+	HBWmallocAllocatorWithTimer hbwmalloc_allocator;
 
 	std::map<unsigned, MemkindAllocatorWithTimer> memkind_allocators;
 };

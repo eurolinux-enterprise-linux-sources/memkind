@@ -33,11 +33,11 @@ features.
 API
 ---
 The memkind library delivers two interfaces:
- * hbwmalloc.h - recomended for high-bandwidth memory usecases (stable)
+ * hbwmalloc.h - recommended for high-bandwidth memory use cases (stable)
  * memkind.h - generic interface for more complex use cases (partially unstable)
 
 For more detailed information about those interfaces see
-coresponding manpages (located in man/ subdir):
+corresponding manpages (located in man/ subdir):
 
     man memkind
 
@@ -50,16 +50,15 @@ BUILD REQUIREMENTS
 To build the memkind libraries on a RHEL Linux system first install
 the required packages with the following command:
 
-    sudo yum install numactl-devel gcc-c++
+    sudo yum install numactl-devel gcc-c++ unzip
 
 On a SLES Linux system install the dependencies with the following
 command:
 
-    sudo zypper install libnuma-devel gcc-c++
+    sudo zypper install libnuma-devel gcc-c++ unzip
 
-The jemalloc source was forked from jemalloc version 3.5.1 and
-modified for the memkind extension.  This source tree is located
-within the jemalloc subdirectory of the memkind source. The jemalloc
+The jemalloc source was forked from jemalloc version 4.3.1. This source tree
+is located within the jemalloc subdirectory of the memkind source. The jemalloc
 source code has been kept close to the original form, and in particular,
 the build system has been lightly modified.
 
@@ -68,7 +67,7 @@ before configuring and building the top level memkind directory.  The
 jemalloc build system supports using an object directory separate from
 the source tree.  To ensure the memkind is able to discover the output
 of the jemalloc build you must create an 'obj' directory, and build
-from within that directory. You can achive that using attached script:
+from within that directory. You can achieve that using attached script:
 
     ./build_jemalloc.sh
 
@@ -87,7 +86,7 @@ memkind even though this kernel version predates v3.11.
 Functionality related to hugepages allocation require patches
 e0ec90ee7e6f6cbaa6d59ffb48d2a7af5e80e61d and
 099730d67417dfee273e9b10ac2560ca7fac7eb9 from kernel org. Without them
-physical memory may end up being located on incorrect numa node.
+physical memory may end up being located on incorrect NUMA node.
 
 Applications using the memkind library require that libnuma and
 libpthread be available for dynamic linking at run time.  Both of
@@ -100,14 +99,25 @@ and on a SLES Linux system with:
 
     sudo zypper install pthread libnuma
 
-To use the interfaces for obtaining 2MB and 1GB pages please be sure
+To use the interfaces for obtaining 2MB pages please be sure
 to follow the instructions here:
     https://www.kernel.org/doc/Documentation/vm/hugetlbpage.txt
-and pay particular attention to the use of the proc files:
+and pay particular attention to the use of the procfs files:
     /proc/sys/vm/nr_hugepages
     /proc/sys/vm/nr_overcommit_hugepages
 for enabling the kernel's huge page pool.
 
+
+SETTING HEAP MANAGER
+--------------------
+In memkind library heap management can be adjusted with MEMKIND_HEAP_MANAGER
+environment variable, which allows for switching to one of the available
+heap managers.
+Values:
+    JEMALLOC – sets the jamalloc heap manager
+    TBB – sets Intel Threading Building Blocks heap manager. This option requires installed
+    Intel Threading Building Blocks library.
+If the MEMKIND_HEAP_MANAGER is not set than the jemalloc heap manager will be used by default.
 
 TESTING
 -------
@@ -150,9 +160,14 @@ threads to CPUs associated with NUMA node 0.  With this configuration
 standard allocations will be fetched across the QPI bus, and high
 bandwidth allocations will be local to the process CPU.
 
+NOTES
+-----
+* Using memkind with Transparent Huge Pages enabled may result in
+ undesirably high memory footprint. To avoid that disable THP using following
+ instruction: https://www.kernel.org/doc/Documentation/vm/transhuge.txt
 
 STATUS
 ------
-The memkind library version is 1.0.0. Diffrent interfaces can represent
-diffrent maturity level (as described in coresponding man pages).
+Different interfaces can represent different maturity level
+(as described in corresponding man pages).
 Feedback on design and implementation is greatly appreciated.

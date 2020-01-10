@@ -1,8 +1,8 @@
-%global gittag0 v1.1.0
+%global gittag0 v1.5.0
 
 Name: memkind
 Summary: User Extensible Heap Manager
-Version: 1.1.0
+Version: 1.5.0
 Release: 1%{?checkout}%{?dist}
 License: BSD
 Group: System Environment/Libraries
@@ -69,9 +69,12 @@ ln -s %{_builddir}/%{name}-%{version}/jemalloc/configure \
 cd %{_builddir}/%{name}-%{version}/jemalloc/obj
 %configure --enable-autogen --with-jemalloc-prefix=jemk_ --enable-memkind \
            --enable-safe --enable-cc-silence --prefix=%{_prefix} \
+	   --without-export --disable-stats --disable-fill \
+	   --disable-valgrind --disable-experimental\
            --includedir=%{_includedir} --libdir=%{_libdir} \
            --bindir=%{_bindir} --docdir=%{_docdir}/%{name} \
            --mandir=%{_mandir} CFLAGS="$RPM_OPT_FLAGS -std=gnu99"
+
 %{__make} %{?_smp_mflags}
 
 # Build memkind lib and tools
@@ -119,6 +122,18 @@ rm -f %{buildroot}/%{_docdir}/%{name}/VERSION
 %{_mandir}/man3/%{name}*.3.*
 
 %changelog
+* Mon Mar 27 2017 Rafael Aquini <aquini@linux.com> - 1.5.0-1
+- Update memkind source file to 1.5.0 upstream
+
+* Fri Feb 17 2017 Rafael Aquini <aquini@linux.com> - 1.4.0-1
+- Update memkind source file to 1.4.0 upstream
+
+* Fri Feb 10 2017 Fedora Release Engineering <releng@fedoraproject.org> - 1.3.0-2
+- Rebuilt for https://fedoraproject.org/wiki/Fedora_26_Mass_Rebuild
+
+* Wed Nov 16 2016 Rafael Aquini <aquini@linux.com> - 1.3.0-1
+- Update memkind source file to 1.3.0 upstream
+
 * Wed Jun 08 2016 Rafael Aquini <aquini@linux.com> - 1.1.0-1
 - Update memkind source file to 1.1.0 upstream
 

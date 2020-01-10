@@ -24,8 +24,10 @@
 
 #pragma once
 
-#include <malloc.h>
 #include <memkind.h>
+
+#include <malloc.h>
+#include <cassert>
 #include "jemalloc/jemalloc.h"
 
 // Malloc, jemalloc, memkind jemalloc and memkind memory operations definitions
@@ -59,7 +61,7 @@ namespace performance_tests
     #define jexx_realloc JE(SYSTEM_JEMALLOC_PREFIX, realloc)
     #define jexx_free JE(SYSTEM_JEMALLOC_PREFIX, free)
     extern "C" {
-        // "vanilia" jemalloc 3.5.1 function prototypes
+        // "vanilia" jemalloc 4.3.1 function prototypes
         // full header cannot be include due to conflict with memkind jemalloc
         extern void * jexx_malloc(size_t size);
         extern void * jexx_calloc(size_t num, size_t size);

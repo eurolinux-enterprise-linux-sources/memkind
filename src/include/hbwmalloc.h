@@ -59,7 +59,7 @@ typedef enum {
      */
     HBW_POLICY_PREFERRED = 2,
     /*
-     *  Interleave pages accross high bandwidth nodes. If insufficient memory
+     *  Interleave pages across high bandwidth nodes. If insufficient memory
      *  pages are available then OOM killer will be triggered.
      */
     HBW_POLICY_INTERLEAVE = 3
@@ -85,23 +85,39 @@ typedef enum {
      */
     HBW_PAGESIZE_2MB           = 2,
     /*
-     * The one gigabyte page size option. The total size of the allocation must
-     * be a multiple of 1GB with this option, otherwise the allocation will
-     * fail.
+     * This option is deprecated.
+     * Allocate high bandwidth memory using 1GB chunks backed by huge pages.
      */
     HBW_PAGESIZE_1GB_STRICT    = 3,
 
     /*
-     * This option allows the user to specify arbitrary sizes backed by one
-     * gigabytes pages. Gigabyte pages are allocated even if the size is not a
-     * modulo of 1GB. A good example of using this feature with realloc is
-     * shown in gb_realloc_example.c
+     * This option is deprecated.
+     * Allocate high bandwidth memory using 1GB chunks backed by huge pages.
      */
-    HBW_PAGESIZE_1GB           = 4
+    HBW_PAGESIZE_1GB           = 4,
+
+    /*
+     * Helper representing value of the last enum element incremented by 1.
+     * Shall not be treated as a valid value for functions taking hbw_pagesize_t
+     * as parameter.
+     */
+    HBW_PAGESIZE_MAX_VALUE
 } hbw_pagesize_t;
 
 /*
- * Returns the current fallback policy when insufficient high bandwith memory
+ * Flags for hbw_verify_ptr function
+ */
+enum {
+
+    /*
+     * This option touches first byte of all pages in address range starting from "addr" to "addr" + "size"
+     * by read and write (so the content will be overwitten by the same data as it was read).
+     */
+    HBW_TOUCH_PAGES      = (1 << 0)
+};
+
+/*
+ * Returns the current fallback policy when insufficient high bandwidth memory
  * is available.
  */
 hbw_policy_t hbw_get_policy(void);
@@ -121,12 +137,22 @@ hbw_policy_t hbw_get_policy(void);
 int hbw_set_policy(hbw_policy_t mode);
 
 /*
- * Verifies high bandwith memory availability.
+ * Verifies high bandwidth memory availability.
  * Returns:
  *   0: if high bandwidth memory is available
  *   ENODEV: if high-bandwidth memory is unavailable.
  */
 int hbw_check_available(void);
+
+/*
+ * Verifies if allocated memory fully fall into high bandwidth memory.
+ * Returns:
+ *   0: if memory in address range from "addr" to "addr" + "size" is allocated in high bandwidth memory
+ *   -1: if any region of memory was not allocated in high bandwidth memory
+ *   EINVAL: if addr is NULL, size equals 0 or flags contained unsupported bit set
+ *   EFAULT: could not verify memory
+ */
+int hbw_verify_memory_region(void* addr, size_t size, int flags);
 
 /*
  * Allocates size bytes of uninitialized high bandwidth memory.

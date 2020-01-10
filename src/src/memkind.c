@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2014 - 2016 Intel Corporation.
+ * Copyright (C) 2014 - 2017 Intel Corporation.
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -22,23 +22,8 @@
  * ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 #define MEMKIND_VERSION_MAJOR 1
-#define MEMKIND_VERSION_MINOR 1
+#define MEMKIND_VERSION_MINOR 5
 #define MEMKIND_VERSION_PATCH 0
-
-#include <sys/param.h>
-#include <sys/mman.h>
-#include <stdint.h>
-#include <stdlib.h>
-#include <stdio.h>
-#include <string.h>
-#include <assert.h>
-#include <pthread.h>
-#include <errno.h>
-#include <sys/mman.h>
-#include <signal.h>
-#include <fcntl.h>
-#include <unistd.h>
-#include <jemalloc/jemalloc.h>
 
 #include <memkind.h>
 #include <memkind/internal/memkind_default.h>
@@ -49,107 +34,122 @@
 #include <memkind/internal/memkind_pmem.h>
 #include <memkind/internal/memkind_interleave.h>
 #include <memkind/internal/memkind_private.h>
+#include <memkind/internal/memkind_log.h>
+#include <memkind/internal/tbb_wrapper.h>
+#include <memkind/internal/heap_manager.h>
 
+#include "config.h"
+
+#include <numa.h>
+#include <sys/param.h>
+#include <sys/mman.h>
+#include <stdint.h>
+#include <stdlib.h>
+#include <stdio.h>
+#include <string.h>
+#include <assert.h>
+#include <pthread.h>
+#include <errno.h>
+#include <signal.h>
+#include <fcntl.h>
+#include <unistd.h>
+#include <jemalloc/jemalloc.h>
+
+/* Clear bits in x, but only this specified in mask. */
+#define CLEAR_BIT(x, mask) ((x) &= (~(mask)))
+
+extern struct memkind_ops MEMKIND_HBW_GBTLB_OPS;
+extern struct memkind_ops MEMKIND_HBW_PREFERRED_GBTLB_OPS;
+extern struct memkind_ops MEMKIND_GBTLB_OPS;
 
 static struct memkind MEMKIND_DEFAULT_STATIC = {
-    &MEMKIND_DEFAULT_OPS,
-    MEMKIND_PARTITION_DEFAULT,
-    "memkind_default",
-    PTHREAD_ONCE_INIT,
-    0, NULL
+    .ops =  &MEMKIND_DEFAULT_OPS,
+    .partition = MEMKIND_PARTITION_DEFAULT,
+    .name = "memkind_default",
+    .init_once = PTHREAD_ONCE_INIT,
 };
 
 static struct memkind MEMKIND_HUGETLB_STATIC = {
-    &MEMKIND_HUGETLB_OPS,
-    MEMKIND_PARTITION_HUGETLB,
-    "memkind_hugetlb",
-    PTHREAD_ONCE_INIT,
-    0, NULL
+    .ops = &MEMKIND_HUGETLB_OPS,
+    .partition = MEMKIND_PARTITION_HUGETLB,
+    .name = "memkind_hugetlb",
+    .init_once = PTHREAD_ONCE_INIT,
 };
 
 static struct memkind MEMKIND_INTERLEAVE_STATIC = {
-    &MEMKIND_INTERLEAVE_OPS,
-    MEMKIND_PARTITION_INTERLEAVE,
-    "memkind_interleave",
-    PTHREAD_ONCE_INIT,
-    0, NULL
+    .ops = &MEMKIND_INTERLEAVE_OPS,
+    .partition = MEMKIND_PARTITION_INTERLEAVE,
+    .name = "memkind_interleave",
+    .init_once = PTHREAD_ONCE_INIT,
 };
 
 static struct memkind MEMKIND_HBW_STATIC = {
-    &MEMKIND_HBW_OPS,
-    MEMKIND_PARTITION_HBW,
-    "memkind_hbw",
-    PTHREAD_ONCE_INIT,
-    0, NULL
+    .ops = &MEMKIND_HBW_OPS,
+    .partition = MEMKIND_PARTITION_HBW,
+    .name = "memkind_hbw",
+    .init_once = PTHREAD_ONCE_INIT,
 };
 
 static struct memkind MEMKIND_HBW_PREFERRED_STATIC = {
-    &MEMKIND_HBW_PREFERRED_OPS,
-    MEMKIND_PARTITION_HBW_PREFERRED,
-    "memkind_hbw_preferred",
-    PTHREAD_ONCE_INIT,
-    0, NULL
+    .ops = &MEMKIND_HBW_PREFERRED_OPS,
+    .partition = MEMKIND_PARTITION_HBW_PREFERRED,
+    .name = "memkind_hbw_preferred",
+    .init_once = PTHREAD_ONCE_INIT,
 };
 
 static struct memkind MEMKIND_HBW_HUGETLB_STATIC = {
-    &MEMKIND_HBW_HUGETLB_OPS,
-    MEMKIND_PARTITION_HBW_HUGETLB,
-    "memkind_hbw_hugetlb",
-    PTHREAD_ONCE_INIT,
-    0, NULL
+    .ops = &MEMKIND_HBW_HUGETLB_OPS,
+    .partition = MEMKIND_PARTITION_HBW_HUGETLB,
+    .name = "memkind_hbw_hugetlb",
+    .init_once = PTHREAD_ONCE_INIT,
 };
 
 static struct memkind MEMKIND_HBW_PREFERRED_HUGETLB_STATIC = {
-    &MEMKIND_HBW_PREFERRED_HUGETLB_OPS,
-    MEMKIND_PARTITION_HBW_PREFERRED_HUGETLB,
-    "memkind_hbw_preferred_hugetlb",
-    PTHREAD_ONCE_INIT,
-    0, NULL
+    .ops = &MEMKIND_HBW_PREFERRED_HUGETLB_OPS,
+    .partition = MEMKIND_PARTITION_HBW_PREFERRED_HUGETLB,
+    .name = "memkind_hbw_preferred_hugetlb",
+    .init_once = PTHREAD_ONCE_INIT,
 };
 
 static struct memkind MEMKIND_HBW_GBTLB_STATIC = {
-    &MEMKIND_HBW_GBTLB_OPS,
-    MEMKIND_PARTITION_HBW_GBTLB,
-    "memkind_hbw_gbtlb",
-    PTHREAD_ONCE_INIT,
-    0, NULL
+    .ops = &MEMKIND_HBW_GBTLB_OPS,
+    .partition = MEMKIND_PARTITION_HBW_GBTLB,
+    .name = "memkind_hbw_gbtlb",
+    .init_once = PTHREAD_ONCE_INIT,
 };
 
 static struct memkind MEMKIND_HBW_PREFERRED_GBTLB_STATIC = {
-    &MEMKIND_HBW_PREFERRED_GBTLB_OPS,
-    MEMKIND_PARTITION_HBW_PREFERRED_GBTLB,
-    "memkind_hbw_preferred_gbtlb",
-    PTHREAD_ONCE_INIT,
-    0, NULL
+    .ops = &MEMKIND_HBW_PREFERRED_GBTLB_OPS,
+    .partition = MEMKIND_PARTITION_HBW_PREFERRED_GBTLB,
+    .name = "memkind_hbw_preferred_gbtlb",
+    .init_once = PTHREAD_ONCE_INIT,
 };
 
 static struct memkind MEMKIND_GBTLB_STATIC = {
-    &MEMKIND_GBTLB_OPS,
-    MEMKIND_PARTITION_GBTLB,
-    "memkind_gbtlb",
-    PTHREAD_ONCE_INIT,
-    0, NULL
+    .ops = &MEMKIND_GBTLB_OPS,
+    .partition = MEMKIND_PARTITION_GBTLB,
+    .name = "memkind_gbtlb",
+    .init_once = PTHREAD_ONCE_INIT,
 };
 
 static struct memkind MEMKIND_HBW_INTERLEAVE_STATIC = {
-    &MEMKIND_HBW_INTERLEAVE_OPS,
-    MEMKIND_PARTITION_HBW_INTERLEAVE,
-    "memkind_hbw_interleave",
-    PTHREAD_ONCE_INIT,
-    0, NULL
+    .ops = &MEMKIND_HBW_INTERLEAVE_OPS,
+    .partition = MEMKIND_PARTITION_HBW_INTERLEAVE,
+    .name = "memkind_hbw_interleave",
+    .init_once = PTHREAD_ONCE_INIT,
 };
 
-struct memkind *MEMKIND_DEFAULT = &MEMKIND_DEFAULT_STATIC;
-struct memkind *MEMKIND_HUGETLB = &MEMKIND_HUGETLB_STATIC;
-struct memkind *MEMKIND_INTERLEAVE = &MEMKIND_INTERLEAVE_STATIC;
-struct memkind *MEMKIND_HBW = &MEMKIND_HBW_STATIC;
-struct memkind *MEMKIND_HBW_PREFERRED = &MEMKIND_HBW_PREFERRED_STATIC;
-struct memkind *MEMKIND_HBW_HUGETLB = &MEMKIND_HBW_HUGETLB_STATIC;
-struct memkind *MEMKIND_HBW_PREFERRED_HUGETLB = &MEMKIND_HBW_PREFERRED_HUGETLB_STATIC;
-struct memkind *MEMKIND_HBW_GBTLB = &MEMKIND_HBW_GBTLB_STATIC;
-struct memkind *MEMKIND_HBW_PREFERRED_GBTLB = &MEMKIND_HBW_PREFERRED_GBTLB_STATIC;
-struct memkind *MEMKIND_GBTLB = &MEMKIND_GBTLB_STATIC;
-struct memkind *MEMKIND_HBW_INTERLEAVE = &MEMKIND_HBW_INTERLEAVE_STATIC;
+MEMKIND_EXPORT struct memkind *MEMKIND_DEFAULT = &MEMKIND_DEFAULT_STATIC;
+MEMKIND_EXPORT struct memkind *MEMKIND_HUGETLB = &MEMKIND_HUGETLB_STATIC;
+MEMKIND_EXPORT struct memkind *MEMKIND_INTERLEAVE = &MEMKIND_INTERLEAVE_STATIC;
+MEMKIND_EXPORT struct memkind *MEMKIND_HBW = &MEMKIND_HBW_STATIC;
+MEMKIND_EXPORT struct memkind *MEMKIND_HBW_PREFERRED = &MEMKIND_HBW_PREFERRED_STATIC;
+MEMKIND_EXPORT struct memkind *MEMKIND_HBW_HUGETLB = &MEMKIND_HBW_HUGETLB_STATIC;
+MEMKIND_EXPORT struct memkind *MEMKIND_HBW_PREFERRED_HUGETLB = &MEMKIND_HBW_PREFERRED_HUGETLB_STATIC;
+MEMKIND_EXPORT struct memkind *MEMKIND_HBW_GBTLB = &MEMKIND_HBW_GBTLB_STATIC;
+MEMKIND_EXPORT struct memkind *MEMKIND_HBW_PREFERRED_GBTLB = &MEMKIND_HBW_PREFERRED_GBTLB_STATIC;
+MEMKIND_EXPORT struct memkind *MEMKIND_GBTLB = &MEMKIND_GBTLB_STATIC;
+MEMKIND_EXPORT struct memkind *MEMKIND_HBW_INTERLEAVE = &MEMKIND_HBW_INTERLEAVE_STATIC;
 
 struct memkind_registry {
     struct memkind *partition_map[MEMKIND_MAX_KIND];
@@ -175,11 +175,132 @@ static struct memkind_registry memkind_registry_g = {
     PTHREAD_MUTEX_INITIALIZER
 };
 
+void *kind_mmap(struct memkind *kind, void* addr, size_t size)
+{
+    if (MEMKIND_LIKELY(kind->ops->mmap == NULL)) {
+        return memkind_default_mmap(kind, addr, size);
+    }
+    else {
+        return kind->ops->mmap(kind, addr, size);
+    }
+}
+
 static size_t Chunksize = 0;
 
-static int memkind_get_kind_for_free(void *ptr, struct memkind **kind);
+static int validate_memtype_bits(memkind_memtype_t memtype) {
+    if(memtype == 0) return -1;
 
-/* Declare weak symbols for alloctor decorators */
+    CLEAR_BIT(memtype, MEMKIND_MEMTYPE_DEFAULT);
+    CLEAR_BIT(memtype, MEMKIND_MEMTYPE_HIGH_BANDWIDTH);
+
+    if(memtype != 0) return -1;
+    return 0;
+}
+
+static int validate_flags_bits(memkind_bits_t flags) {
+    CLEAR_BIT(flags, MEMKIND_MASK_PAGE_SIZE_2MB);
+
+    if(flags != 0) return -1;
+    return 0;
+}
+
+static int validate_policy(memkind_policy_t policy) {
+    if((policy >= 0) && (policy < MEMKIND_POLICY_MAX_VALUE)) return 0;
+    return -1;
+}
+
+/* Kind creation */
+MEMKIND_EXPORT int memkind_create_kind(memkind_memtype_t memtype_flags,
+                                       memkind_policy_t policy,
+                                       memkind_bits_t flags,
+                                       memkind_t* kind)
+{
+    if(validate_memtype_bits(memtype_flags) != 0) {
+        log_err("Cannot create kind: incorrect memtype_flags.");
+        return MEMKIND_ERROR_INVALID;
+    }
+
+    if(validate_flags_bits(flags) != 0) {
+        log_err("Cannot create kind: incorrect flags.");
+        return MEMKIND_ERROR_INVALID;
+    }
+
+    if(validate_policy(policy) != 0) {
+        log_err("Cannot create kind: incorrect policy.");
+        return MEMKIND_ERROR_INVALID;
+    }
+
+    if(kind == NULL) {
+        log_err("Cannot create kind: 'kind' is NULL pointer.");
+        return MEMKIND_ERROR_INVALID;
+    }
+
+    memkind_t tmp_kind = NULL;
+
+    if(memtype_flags == MEMKIND_MEMTYPE_DEFAULT) {
+        if(policy == MEMKIND_POLICY_PREFERRED_LOCAL) {
+            if(flags & MEMKIND_MASK_PAGE_SIZE_2MB)
+                tmp_kind = MEMKIND_HUGETLB;
+            else
+                tmp_kind = MEMKIND_DEFAULT;
+        }
+    }
+
+    if(memtype_flags == MEMKIND_MEMTYPE_HIGH_BANDWIDTH) {
+        if(policy == MEMKIND_POLICY_BIND_LOCAL) {
+            if(flags & MEMKIND_MASK_PAGE_SIZE_2MB)
+                tmp_kind = MEMKIND_HBW_HUGETLB;
+            else
+                tmp_kind = MEMKIND_HBW;
+        }
+
+        if(policy == MEMKIND_POLICY_PREFERRED_LOCAL) {
+            if(flags & MEMKIND_MASK_PAGE_SIZE_2MB)
+                tmp_kind = MEMKIND_HBW_PREFERRED_HUGETLB;
+            else
+                tmp_kind = MEMKIND_HBW_PREFERRED;
+        }
+
+        if((policy == MEMKIND_POLICY_INTERLEAVE_ALL)
+            && !(flags & MEMKIND_MASK_PAGE_SIZE_2MB))
+        {
+            tmp_kind = MEMKIND_HBW_INTERLEAVE;
+        }
+    }
+
+    if((memtype_flags & MEMKIND_MEMTYPE_HIGH_BANDWIDTH)
+        && (memtype_flags & MEMKIND_MEMTYPE_DEFAULT)
+        && (policy == MEMKIND_POLICY_INTERLEAVE_ALL)
+        && !(flags & MEMKIND_MASK_PAGE_SIZE_2MB))
+    {
+        tmp_kind = MEMKIND_INTERLEAVE;
+    }
+
+    if(tmp_kind == NULL) {
+        log_err("Cannot create kind: invalid argument.");
+        return MEMKIND_ERROR_INVALID;
+    }
+
+    if(memkind_check_available(tmp_kind) != 0) {
+        if(policy == MEMKIND_POLICY_PREFERRED_LOCAL) {
+            tmp_kind = MEMKIND_DEFAULT;
+        } else {
+            log_err("Cannot create kind: requested memory type is not available.");
+            return MEMKIND_ERROR_MEMTYPE_NOT_AVAILABLE;
+        }
+    }
+
+    *kind = tmp_kind;
+    return MEMKIND_SUCCESS;
+}
+
+/* Kind destruction. */
+MEMKIND_EXPORT int memkind_destroy_kind(memkind_t kind)
+{
+    return kind->ops->destroy(kind);
+}
+
+/* Declare weak symbols for allocator decorators */
 extern void memkind_malloc_pre(struct memkind **, size_t *) __attribute__((weak));
 extern void memkind_malloc_post(struct memkind *, size_t, void **) __attribute__((weak));
 extern void memkind_calloc_pre(struct memkind **, size_t *, size_t *) __attribute__((weak));
@@ -191,12 +312,12 @@ extern void memkind_realloc_post(struct memkind *, void *, size_t, void **) __at
 extern void memkind_free_pre(struct memkind **, void **) __attribute__((weak));
 extern void memkind_free_post(struct memkind *, void *) __attribute__((weak));
 
-int memkind_get_version()
+MEMKIND_EXPORT int memkind_get_version()
 {
     return MEMKIND_VERSION_MAJOR * 1000000 + MEMKIND_VERSION_MINOR * 1000 + MEMKIND_VERSION_PATCH;
 }
 
-void memkind_error_message(int err, char *msg, size_t size)
+MEMKIND_EXPORT void memkind_error_message(int err, char *msg, size_t size)
 {
     switch (err) {
         case MEMKIND_ERROR_UNAVAILABLE:
@@ -208,20 +329,8 @@ void memkind_error_message(int err, char *msg, size_t size)
         case MEMKIND_ERROR_MMAP:
             strncpy(msg, "<memkind> Call to mmap() failed", size);
             break;
-        case MEMKIND_ERROR_MEMALIGN:
-            strncpy(msg, "<memkind> Call to posix_memalign() failed", size);
-            break;
-        case MEMKIND_ERROR_MALLCTL:
-            strncpy(msg, "<memkind> Call to jemk_mallctl() failed", size);
-            break;
         case MEMKIND_ERROR_MALLOC:
             strncpy(msg, "<memkind> Call to jemk_malloc() failed", size);
-            break;
-        case MEMKIND_ERROR_GETCPU:
-            strncpy(msg, "<memkind> Call to sched_getcpu() returned out of range", size);
-            break;
-        case MEMKIND_ERROR_TIEDISTANCE:
-            strncpy(msg, "<memkind> Two NUMA memory nodes are equidistant from target cpu node", size);
             break;
         case MEMKIND_ERROR_ENVIRON:
             strncpy(msg, "<memkind> Error parsing environment variable (MEMKIND_*)", size);
@@ -235,28 +344,17 @@ void memkind_error_message(int err, char *msg, size_t size)
         case MEMKIND_ERROR_RUNTIME:
             strncpy(msg, "<memkind> Unspecified run-time error", size);
             break;
-        case MEMKIND_ERROR_ALIGNMENT:
         case EINVAL:
             strncpy(msg, "<memkind> Alignment must be a power of two and larger than sizeof(void *)", size);
             break;
-        case MEMKIND_ERROR_MALLOCX:
         case ENOMEM:
             strncpy(msg, "<memkind> Call to jemk_mallocx() failed", size);
-            break;
-        case MEMKIND_ERROR_PTHREAD:
-            strncpy(msg, "<memkind> Call to pthread library failed", size);
-            break;
-        case MEMKIND_ERROR_BADOPS:
-            strncpy(msg, "<memkind> memkind_ops structure is poorly formed (missing or incorrect functions)", size);
             break;
         case MEMKIND_ERROR_HUGETLB:
             strncpy(msg, "<memkind> unable to allocate huge pages", size);
             break;
-        case MEMKIND_ERROR_BADPOLICY:
-            strncpy(msg, "<memkind> invalid policy value", size);
-            break;
-        case MEMKIND_ERROR_REPPOLICY:
-            strncpy(msg, "<memkind> policy initialized more than once", size);
+        case MEMKIND_ERROR_BADOPS:
+            strncpy(msg, "<memkind> memkind_ops structure is poorly formed (missing or incorrect functions)", size);
             break;
         default:
             snprintf(msg, size, "<memkind> Undefined error number: %i", err);
@@ -267,19 +365,32 @@ void memkind_error_message(int err, char *msg, size_t size)
     }
 }
 
-int memkind_create(const struct memkind_ops *ops, const char *name, struct memkind **kind)
+void memkind_init(memkind_t kind, bool check_numa)
 {
-    int err = 0;
-    int tmp = 0;
+    log_info("Initializing kind %s.", kind->name);
+    heap_manager_init(kind);
+    if (check_numa) {
+        int err = numa_available();
+        if (err) {
+            log_fatal("[%s] NUMA not available (error code:%d).", kind->name, err);
+            abort();
+        }
+    }
+}
+
+static void nop(void) {}
+
+static int memkind_create(struct memkind_ops *ops, const char *name, struct memkind **kind)
+{
+    int err;
     int i;
 
     *kind = NULL;
-    err = pthread_mutex_lock(&(memkind_registry_g.lock));
-    if (err) {
-        err = MEMKIND_ERROR_PTHREAD;
-        goto exit;
-    }
+    if (pthread_mutex_lock(&memkind_registry_g.lock) != 0)
+        assert(0 && "failed to acquire mutex");
+
     if (memkind_registry_g.num_kind == MEMKIND_MAX_KIND) {
+        log_err("Attempted to initialize more than maximum (%i) number of kinds.", MEMKIND_MAX_KIND);
         err = MEMKIND_ERROR_TOOMANY;
         goto exit;
     }
@@ -290,20 +401,20 @@ int memkind_create(const struct memkind_ops *ops, const char *name, struct memki
         ops->realloc == NULL ||
         ops->posix_memalign == NULL ||
         ops->free == NULL ||
-        ops->get_size == NULL ||
         ops->init_once != NULL) {
         err = MEMKIND_ERROR_BADOPS;
         goto exit;
     }
     for (i = 0; i < memkind_registry_g.num_kind; ++i) {
         if (strcmp(name, memkind_registry_g.partition_map[i]->name) == 0) {
-            err = MEMKIND_ERROR_REPNAME;
+            err = MEMKIND_ERROR_INVALID;
             goto exit;
         }
     }
     *kind = (struct memkind *)jemk_calloc(1, sizeof(struct memkind));
     if (!*kind) {
         err = MEMKIND_ERROR_MALLOC;
+        log_err("jemk_calloc() failed.");
         goto exit;
     }
 
@@ -315,33 +426,31 @@ int memkind_create(const struct memkind_ops *ops, const char *name, struct memki
     memkind_registry_g.partition_map[memkind_registry_g.num_kind] = *kind;
     ++memkind_registry_g.num_kind;
 
+    (*kind)->init_once = PTHREAD_ONCE_INIT;
+    pthread_once(&(*kind)->init_once, nop); //this is done to avoid init_once for dynamic kinds
 exit:
-    if (err != MEMKIND_ERROR_PTHREAD) {
-        tmp = pthread_mutex_unlock(&(memkind_registry_g.lock));
-        err = err ? err : tmp;
-    }
+    if (pthread_mutex_unlock(&memkind_registry_g.lock) != 0)
+        assert(0 && "failed to release mutex");
+
     return err;
 }
 
 #ifdef __GNUC__
 __attribute__((destructor))
 #endif
-int memkind_finalize(void)
+static int memkind_finalize(void)
 {
     struct memkind *kind;
     int i;
-    int err;
+    int err = 0;
 
-    err = pthread_mutex_lock(&(memkind_registry_g.lock));
-    if (err) {
-        err = MEMKIND_ERROR_PTHREAD;
-        goto exit;
-    }
+    if (pthread_mutex_lock(&memkind_registry_g.lock) != 0)
+        assert(0 && "failed to acquire mutex");
 
     for (i = 0; i < memkind_registry_g.num_kind; ++i) {
         kind = memkind_registry_g.partition_map[i];
-        if (kind) {
-            err = kind->ops->destroy(kind);
+        if (kind && kind->ops->finalize) {
+            err = kind->ops->finalize(kind);
             if (err) {
                 goto exit;
             }
@@ -353,192 +462,135 @@ int memkind_finalize(void)
     }
 
 exit:
-    if (err != MEMKIND_ERROR_PTHREAD) {
-        err = pthread_mutex_unlock(&(memkind_registry_g.lock)) ?
-              MEMKIND_ERROR_PTHREAD : 0;
-    }
+    if (pthread_mutex_unlock(&memkind_registry_g.lock) != 0)
+        assert(0 && "failed to release mutex");
+
     return err;
 }
 
-int memkind_get_num_kind(int *num_kind)
-{
-    *num_kind = memkind_registry_g.num_kind;
-    return 0;
-}
-
-int memkind_get_kind_by_partition(int partition, struct memkind **kind)
+MEMKIND_EXPORT int memkind_check_available(struct memkind *kind)
 {
     int err = 0;
 
-    if (partition >= 0 &&
-        partition < MEMKIND_MAX_KIND &&
-        memkind_registry_g.partition_map[partition] != NULL) {
-        *kind = memkind_registry_g.partition_map[partition];
-    }
-    else {
-        *kind = NULL;
-        err = MEMKIND_ERROR_UNAVAILABLE;
-    }
-    return err;
-}
-
-int memkind_get_kind_by_name(const char *name, struct memkind **kind)
-{
-    int err = 0;
-    int i;
-
-    *kind = NULL;
-    for (i = 0; i < memkind_registry_g.num_kind; ++i) {
-        if (strcmp(name, memkind_registry_g.partition_map[i]->name) == 0) {
-            *kind = memkind_registry_g.partition_map[i];
-            break;
-        }
-    }
-    if (*kind == NULL) {
-        err = MEMKIND_ERROR_UNAVAILABLE;
-    }
-    return err;
-}
-
-void *memkind_partition_mmap(int partition, void *addr, size_t size)
-{
-    int err;
-    void *result = MAP_FAILED;
-    struct memkind *kind;
-
-    err = memkind_get_kind_by_partition(partition, &kind);
-    if (!err) {
-        err = memkind_check_available(kind);
-    }
-    if (!err) {
-        if (kind->ops->mmap) {
-            result = kind->ops->mmap(kind, addr, size);
-        }
-        else {
-            result = memkind_default_mmap(kind, addr, size);
-        }
-    }
-    return result;
-}
-
-int memkind_check_available(struct memkind *kind)
-{
-    int err = 0;
-
-    if (kind->ops->check_available) {
+    if (MEMKIND_LIKELY(kind->ops->check_available)) {
         err = kind->ops->check_available(kind);
     }
     return err;
 }
 
-void *memkind_malloc(struct memkind *kind, size_t size)
+MEMKIND_EXPORT void *memkind_malloc(struct memkind *kind, size_t size)
 {
     void *result;
 
-    if (kind->ops->init_once) {
-        pthread_once(&(kind->init_once), kind->ops->init_once);
-    }
+    pthread_once(&kind->init_once, kind->ops->init_once);
+
+#ifdef MEMKIND_DECORATION_ENABLED
     if (memkind_malloc_pre) {
         memkind_malloc_pre(&kind, &size);
     }
+#endif
+
     result = kind->ops->malloc(kind, size);
+
+#ifdef MEMKIND_DECORATION_ENABLED
     if (memkind_malloc_post) {
         memkind_malloc_post(kind, size, &result);
     }
+#endif
+
     return result;
 }
 
-void *memkind_calloc(struct memkind *kind, size_t num, size_t size)
+MEMKIND_EXPORT void *memkind_calloc(struct memkind *kind, size_t num, size_t size)
 {
     void *result;
 
-    if (kind->ops->init_once) {
-        pthread_once(&(kind->init_once), kind->ops->init_once);
-    }
+    pthread_once(&kind->init_once, kind->ops->init_once);
+
+#ifdef MEMKIND_DECORATION_ENABLED
     if (memkind_calloc_pre) {
         memkind_calloc_pre(&kind, &num, &size);
     }
+#endif
+
     result = kind->ops->calloc(kind, num, size);
+
+#ifdef MEMKIND_DECORATION_ENABLED
     if (memkind_calloc_post) {
         memkind_calloc_post(kind, num, size, &result);
     }
+#endif
+
     return result;
 }
 
-int memkind_posix_memalign(struct memkind *kind, void **memptr, size_t alignment,
+MEMKIND_EXPORT int memkind_posix_memalign(struct memkind *kind, void **memptr, size_t alignment,
                            size_t size)
 {
     int err;
 
-    if (kind->ops->init_once) {
-        pthread_once(&(kind->init_once), kind->ops->init_once);
-    }
+    pthread_once(&kind->init_once, kind->ops->init_once);
+
+#ifdef MEMKIND_DECORATION_ENABLED
     if (memkind_posix_memalign_pre) {
         memkind_posix_memalign_pre(&kind, memptr, &alignment, &size);
     }
+#endif
+
     err = kind->ops->posix_memalign(kind, memptr, alignment, size);
+
+#ifdef MEMKIND_DECORATION_ENABLED
     if (memkind_posix_memalign_post) {
         memkind_posix_memalign_post(kind, memptr, alignment, size, &err);
     }
+#endif
+
     return err;
 }
 
-void *memkind_realloc(struct memkind *kind, void *ptr, size_t size)
+MEMKIND_EXPORT void *memkind_realloc(struct memkind *kind, void *ptr, size_t size)
 {
     void *result;
 
-    if (kind->ops->init_once) {
-        pthread_once(&(kind->init_once), kind->ops->init_once);
-    }
+    pthread_once(&kind->init_once, kind->ops->init_once);
+
+#ifdef MEMKIND_DECORATION_ENABLED
     if (memkind_realloc_pre) {
         memkind_realloc_pre(&kind, &ptr, &size);
     }
+#endif
+
     result = kind->ops->realloc(kind, ptr, size);
+
+#ifdef MEMKIND_DECORATION_ENABLED
     if (memkind_realloc_post) {
         memkind_realloc_post(kind, ptr, size, &result);
     }
+#endif
+
     return result;
 }
 
-void memkind_free(struct memkind *kind, void *ptr)
+MEMKIND_EXPORT void memkind_free(struct memkind *kind, void *ptr)
 {
-    if (!kind) {
-        memkind_get_kind_for_free(ptr, &kind);
-    }
-    if (kind->ops->init_once) {
-        pthread_once(&(kind->init_once), kind->ops->init_once);
-    }
+#ifdef MEMKIND_DECORATION_ENABLED
     if (memkind_free_pre) {
         memkind_free_pre(&kind, &ptr);
     }
-    kind->ops->free(kind, ptr);
+#endif
+    if (!kind) {
+        heap_manager_free(kind, ptr);
+    }
+    else {
+        pthread_once(&kind->init_once, kind->ops->init_once);
+        kind->ops->free(kind, ptr);
+    }
+
+#ifdef MEMKIND_DECORATION_ENABLED
     if (memkind_free_post) {
         memkind_free_post(kind, ptr);
     }
-}
-
-int memkind_get_size(memkind_t kind, size_t *total, size_t *free)
-{
-    return kind->ops->get_size(kind, total, free);
-}
-
-static int memkind_get_kind_for_free(void *ptr, struct memkind **kind)
-{
-    int i, num_kind;
-    struct memkind *test_kind;
-
-    *kind = MEMKIND_DEFAULT;
-    memkind_get_num_kind(&num_kind);
-    for (i = 0; i < num_kind; ++i) {
-        memkind_get_kind_by_partition(i, &test_kind);
-        if (test_kind &&
-            test_kind->ops->check_addr &&
-            test_kind->ops->check_addr(test_kind, ptr) == 0) {
-            *kind = test_kind;
-            break;
-        }
-    }
-    return 0;
+#endif
 }
 
 static int memkind_tmpfile(const char *dir, size_t size, int *fd, void **addr)
@@ -546,8 +598,13 @@ static int memkind_tmpfile(const char *dir, size_t size, int *fd, void **addr)
     static char template[] = "/memkind.XXXXXX";
     int err = 0;
     int oerrno;
+    int dir_len = strlen(dir);
 
-    char fullname[strlen(dir) + sizeof (template)];
+    if (dir_len > PATH_MAX) {
+        return MEMKIND_ERROR_RUNTIME;
+    }
+
+    char fullname[dir_len + sizeof (template)];
     (void) strcpy(fullname, dir);
     (void) strcat(fullname, template);
 
@@ -571,6 +628,7 @@ static int memkind_tmpfile(const char *dir, size_t size, int *fd, void **addr)
     *addr = mmap(NULL, size, PROT_READ | PROT_WRITE, MAP_SHARED, *fd, 0);
     if (*addr == MAP_FAILED) {
         err = MEMKIND_ERROR_RUNTIME;
+        log_err("mmap() returned MAP_FAILED.");
         goto exit;
     }
 
@@ -588,7 +646,7 @@ exit:
     return err;
 }
 
-int memkind_create_pmem(const char *dir, size_t max_size,
+MEMKIND_EXPORT int memkind_create_pmem(const char *dir, size_t max_size,
                         struct memkind **kind)
 {
     int err = 0;
@@ -599,7 +657,7 @@ int memkind_create_pmem(const char *dir, size_t max_size,
     if (Chunksize == 0) {
         err = jemk_mallctl("opt.lg_chunk", &Chunksize, &s, NULL, 0);
         if (err) {
-            return MEMKIND_ERROR_MALLCTL;
+            return MEMKIND_ERROR_RUNTIME;
         }
         Chunksize = 1 << Chunksize; /* 2^N */
     }

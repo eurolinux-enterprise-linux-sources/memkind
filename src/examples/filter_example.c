@@ -22,10 +22,11 @@
  * ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
+#include <memkind.h>
+
 #include <stdlib.h>
 #include <stdio.h>
 #include <errno.h>
-#include <memkind.h>
 
 int main(int argc, char **argv)
 {
@@ -78,8 +79,8 @@ int main(int argc, char **argv)
         fprintf(stdout, "%.6e\n", result[i]);
     }
 
-    memkind_free(MEMKIND_DEFAULT, result);
-    memkind_free(MEMKIND_DEFAULT, filter);
+    memkind_free(MEMKIND_HBW, result);
+    memkind_free(MEMKIND_HBW, filter);
     memkind_free(MEMKIND_DEFAULT, stream);
 
     return 0;

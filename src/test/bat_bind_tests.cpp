@@ -22,14 +22,16 @@
  * ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
+#include "memkind.h"
+
 #include <fstream>
 #include <algorithm>
 
 #include "common.h"
 #include "check.h"
 #include "omp.h"
-#include "memkind.h"
 #include "trial_generator.h"
+#include "allocator_perf_tool/HugePageOrganizer.hpp"
 
 /* Set of basic acceptance tests for BIND policy, the goal of this set of tests
  * is to prove that you can do incremental allocations of memory with different
@@ -37,29 +39,30 @@
  */
 class BABindTest : public TGTest
 {
-
+private:
+    HugePageOrganizer huge_page_organizer = HugePageOrganizer(32);
 };
 
 
-TEST_F(BABindTest, TC_Memkind_HBW_Bind_CheckAvailable)
+TEST_F(BABindTest, test_TC_MEMKIND_HBW_Bind_CheckAvailable)
 {
     ASSERT_EQ(0, hbw_check_available());
 }
 
-TEST_F(BABindTest, TC_Memkind_HBW_Bind_Policy)
+TEST_F(BABindTest, test_TC_MEMKIND_HBW_Bind_Policy)
 {
     hbw_set_policy(HBW_POLICY_BIND);
     EXPECT_EQ(HBW_POLICY_BIND, hbw_get_policy());
 }
 
-TEST_F(BABindTest, TC_Memkind_HBW_Bind_MallocIncremental)
+TEST_F(BABindTest, test_TC_MEMKIND_HBW_Bind_MallocIncremental)
 {
     hbw_set_policy(HBW_POLICY_BIND);
     tgen->generate_incremental(HBW_MALLOC);
     tgen->run(num_bandwidth, bandwidth);
 }
 
-TEST_F(BABindTest, TC_Memkind_HBW_Bind_CallocIncremental)
+TEST_F(BABindTest, test_TC_MEMKIND_HBW_Bind_CallocIncremental)
 {
     hbw_set_policy(HBW_POLICY_BIND);
     tgen->generate_incremental(HBW_CALLOC);
@@ -67,21 +70,21 @@ TEST_F(BABindTest, TC_Memkind_HBW_Bind_CallocIncremental)
 }
 
 
-TEST_F(BABindTest, TC_Memkind_HBW_Bind_ReallocIncremental)
+TEST_F(BABindTest, test_TC_MEMKIND_HBW_Bind_ReallocIncremental)
 {
     hbw_set_policy(HBW_POLICY_BIND);
     tgen->generate_incremental(HBW_REALLOC);
     tgen->run(num_bandwidth, bandwidth);
 }
 
-TEST_F(BABindTest, TC_Memkind_HBW_Bind_MemalignIncremental)
+TEST_F(BABindTest, test_TC_MEMKIND_HBW_Bind_MemalignIncremental)
 {
     hbw_set_policy(HBW_POLICY_BIND);
     tgen->generate_incremental(HBW_MEMALIGN);
     tgen->run(num_bandwidth, bandwidth);
 }
 
-TEST_F(BABindTest, TC_Memkind_HBW_Bind_MemalignPsizeIncremental)
+TEST_F(BABindTest, test_TC_MEMKIND_2MBPages_HBW_Bind_MemalignPsizeIncremental)
 {
     hbw_set_policy(HBW_POLICY_BIND);
     tgen->generate_incremental(HBW_MEMALIGN_PSIZE);

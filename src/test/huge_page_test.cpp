@@ -1,5 +1,5 @@
 /*
-* Copyright (C) 2016 Intel Corporation.
+* Copyright (C) 2016 - 2017 Intel Corporation.
 * All rights reserved.
 *
 * Redistribution and use in source and binary forms, with or without
@@ -33,6 +33,8 @@
 * There are two root causes of the error:
 * - kernel bug (munmap() fails when the size is not aligned)
 * - heap Manager doesn’t provide size aligned to 2MB pages for munmap()
+* Test allocates 2000MB using Huge Pages (50threads*10operations*4MBalloc_size),
+* but it needs extra Huge Pages due to overhead caused by heap management.
 */
 class  HugePageTest: public :: testing::Test
 {
@@ -44,9 +46,9 @@ protected:
     {
         // Get initial value of nr_hugepages
         initial_nr_hugepages = HugePageOrganizer::get_nr_hugepages();
-        // Set number of Huge Pages to allocate to 1000
+        // Set number of Huge Pages to allocate
         // System command returned -1 on error
-        ASSERT_NE(HugePageOrganizer::set_nr_hugepages(1000), -1);
+        ASSERT_NE(HugePageOrganizer::set_nr_hugepages(2048), -1);
     }
 
     void TearDown()
@@ -73,9 +75,9 @@ protected:
 
         // This bug occurs more frequently under stress of multithreaded allocations.
         for (int i=0; i<threads_number; i++) {
-		Task* task = new HugePageUnmap(mem_operations_num, touch_memory, alignment, alloc_size, HBW_PAGESIZE_2MB);
-		tasks.push_back(task);
-		threads.push_back(new Thread(task));
+            Task* task = new HugePageUnmap(mem_operations_num, touch_memory, alignment, alloc_size, HBW_PAGESIZE_2MB);
+            tasks.push_back(task);
+            threads.push_back(new Thread(task));
         }
 
         float elapsed_time = timer.getElapsedTime();
@@ -87,7 +89,7 @@ protected:
 
         //task release
         for (int i=0; i<tasks.size(); i++) {
-		delete tasks[i];
+            delete tasks[i];
         }
 
         RecordProperty("threads_number", threads_number);
@@ -99,10 +101,8 @@ protected:
 
 
 // Test passes when there is no crash.
-TEST_F(HugePageTest, TC_MEMKIND_UNMAP_HUGE_PAGE)
+TEST_F(HugePageTest, test_TC_MEMKIND_UNMAP_HUGE_PAGE)
 {
-	int iterations = 10;
-	for (int i=0; i<iterations; i++) {
-		run();
-	}
+    ASSERT_HUGEPAGES_AVAILABILITY();
+    run();
 }

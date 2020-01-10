@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2014 - 2016 Intel Corporation.
+ * Copyright (C) 2014 - 2017 Intel Corporation.
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -27,6 +27,10 @@
 extern "C" {
 #endif
 
+#ifndef MEMKIND_INTERNAL_API
+#warning "DO NOT INCLUDE THIS FILE! IT IS INTERNAL MEMKIND API AND SOON WILL BE REMOVED FROM BIN & DEVEL PACKAGES"
+#endif
+
 #include <memkind.h>
 
 /*
@@ -40,9 +44,8 @@ extern "C" {
 int memkind_hugetlb_get_mmap_flags(struct memkind *kind, int *flags);
 void memkind_hugetlb_init_once(void);
 int memkind_hugetlb_check_available_2mb(struct memkind *kind);
-int memkind_hugetlb_check_available_1gb(struct memkind *kind);
 
-extern const struct memkind_ops MEMKIND_HUGETLB_OPS;
+extern struct memkind_ops MEMKIND_HUGETLB_OPS;
 
 #ifdef __cplusplus
 }

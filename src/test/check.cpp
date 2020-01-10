@@ -22,6 +22,8 @@
  * ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
+#include <memkind/internal/memkind_hbw.h>
+
 #include <stdlib.h>
 #include <stdio.h>
 #include <sys/types.h>
@@ -36,6 +38,8 @@
 #include <fstream>
 #include <string>
 #include <cstring>
+#include <numa.h>
+#include <errno.h>
 
 #include "check.h"
 
@@ -56,7 +60,7 @@ Check::Check(const void *p, const size_t size, const size_t page_size)
     this->ptr = p;
     this->size = size;
     size_t psize = (page_size >= min_page_size ? page_size : min_page_size);
-    if (p && size) {
+    if (p && size && psize) {
         num_address = size / psize;
         num_address += size % psize ? 1 : 0;
 
@@ -69,6 +73,7 @@ Check::Check(const void *p, const size_t size, const size_t page_size)
     }
     else {
         address = NULL;
+        num_address = 0;
     }
 }
 
@@ -87,100 +92,55 @@ Check::Check(const Check &other)
     }
 }
 
-int Check::check_node_hbw(size_t num_bandwidth, const int *bandwidth)
+void Check::check_node_hbw()
 {
-    int err = 0;
-    int max_bandwidth;
-    size_t i, j;
-    int *status = NULL;
+    int status = -1;
+    struct bitmask *expected_nodemask = numa_allocate_nodemask(), *returned_nodemask = numa_allocate_nodemask();
 
-    status = new int [num_address];
+    memkind_hbw_all_get_mbind_nodemask(NULL, expected_nodemask->maskp, expected_nodemask->size);
 
-    for (i = 0; i < num_address; i++) {
-        get_mempolicy(&status[i], NULL, 0, address[i], MPOL_F_NODE | MPOL_F_ADDR);
+    for (size_t i = 0; i < num_address; i++) {
+        ASSERT_EQ(0, get_mempolicy(&status, returned_nodemask->maskp, returned_nodemask->size, address[i], MPOL_F_ADDR));
+        check_node_bind_or_preferred(expected_nodemask, returned_nodemask);
     }
 
-    max_bandwidth = 0;
-    for (j = 0; j < num_bandwidth; ++j) {
-        max_bandwidth = bandwidth[j] > max_bandwidth ?
-                        bandwidth[j] : max_bandwidth;
-    }
-
-    if ((size_t)status[0] >= num_bandwidth ||
-        bandwidth[status[0]] != max_bandwidth) {
-        err = -1;
-    }
-    for (i = 1; i < num_address && !err; ++i) {
-        if ((size_t)status[i] >= num_bandwidth ||
-            bandwidth[status[i]] != max_bandwidth) {
-            err = i;
-        }
-    }
-
-    delete[] status;
-
-    return err;
-
+    numa_free_nodemask(expected_nodemask);
+    numa_free_nodemask(returned_nodemask);
 }
 
-int Check::check_node_hbw_interleave(size_t num_bandwidth, const int *bandwidth)
+void Check::check_hbw_numa_nodes(int policy)
 {
-    printf("Running check for hbw interleave\n");
-    printf("num_bandwidth = %zd\n num_address = %zd \n",num_bandwidth, num_address );
+    int status = -1;
+    struct bitmask *expected_nodemask = numa_allocate_nodemask(), *returned_nodemask = numa_allocate_nodemask();
 
-    int err = 0;
-    int max_bandwidth;
-    int *status = NULL;
-    int *hbw_nodes =  NULL;
-    bool page_in_node = false;
-
-    status = new int [num_address];
-    hbw_nodes = new int[num_bandwidth];
-
-    move_pages(0, num_address, address, NULL, status, MPOL_MF_MOVE);
-    max_bandwidth = 0;
-    memset(hbw_nodes, 0, sizeof(int)*num_bandwidth);
-
-    // Here we will identify which nodes are HBW and set the max
-    // bandwidth in the systeml
-    for (size_t i = 0; i < num_bandwidth; ++i) {
-        if (bandwidth[i] > max_bandwidth) {
-            // Set hbw_nodes to 0 since a new max bandwidth
-            // has been identified, and then set the node to 1
-            memset(hbw_nodes, 0, sizeof(int)*num_bandwidth);
-            max_bandwidth = bandwidth[i];
-            hbw_nodes[i] = 1;
-        }
-        else if (bandwidth[i] == max_bandwidth) {
-            hbw_nodes[i] = 1;
+    memkind_hbw_all_get_mbind_nodemask(NULL, expected_nodemask->maskp, expected_nodemask->size);
+    for (size_t i = 0; i < num_address; i++) {
+        ASSERT_EQ(0, get_mempolicy(&status, returned_nodemask->maskp, returned_nodemask->size, address[i], MPOL_F_ADDR));
+        EXPECT_EQ(policy, status);
+        switch(policy) {
+            case MPOL_INTERLEAVE:
+                EXPECT_TRUE(numa_bitmask_equal(expected_nodemask, returned_nodemask));
+                break;
+            case MPOL_BIND:
+            case MPOL_PREFERRED:
+                check_node_bind_or_preferred(expected_nodemask, returned_nodemask);
+                break;
+            default:
+                printf("Unknown policy\n");
         }
     }
 
-    for (size_t i = 0 ; i < num_bandwidth && !err; ++i) {
-        page_in_node = false;
-        //Find a hbw_node
-        if (hbw_nodes[i]) {
-            //Itereate through num_address to see
-            //if a status position is set to the
-            // hbw node
-            for(size_t j = 0; j < num_address; ++j) {
-                //Minus 1 is because nodes are 1-based
-                //and hbw_nodes is a 0-based index array
-                if(((size_t)status[j] - 1) == i) {
-                    page_in_node = true;
-                    break;
-                }
-            }
-            //None page has been assign to hbw node
-            if (!page_in_node) {
-                err = 1;
-            }
+    numa_free_nodemask(expected_nodemask);
+    numa_free_nodemask(returned_nodemask);
+}
+
+void Check::check_node_bind_or_preferred(struct bitmask* expected_nodemask, struct bitmask* returned_nodemask)
+{
+    for(int i=0; i < numa_num_possible_nodes(); i++) {
+        if(numa_bitmask_isbitset(returned_nodemask, i)) {
+            EXPECT_TRUE(numa_bitmask_isbitset(expected_nodemask, i));
         }
     }
-
-    delete[] status;
-    delete[] hbw_nodes;
-    return err;
 }
 
 int Check::check_zero(void)
@@ -371,4 +331,33 @@ int Check::check_page_size(size_t page_size, void *vaddr)
     }
     /*Never found a match!*/
     return 1;
+}
+
+void Check::record_page_association()
+{
+    int max_node_id = numa_max_node();
+    std::unique_ptr<int[]> nodes(new int[num_address]);
+    std::vector<int> pages_on_node(max_node_id+1);
+
+    if (move_pages(0, num_address, address, NULL, nodes.get(), MPOL_MF_MOVE)) {
+        fprintf(stderr, "Error: move_pages() returned %s\n", strerror(errno));
+        return;
+    }
+
+    for (size_t i = 0; i < num_address; i++) {
+        if (nodes[i] < 0) {
+            fprintf(stderr,"Error: status of page %p is %d\n", address[i], nodes[i]);
+            return;
+        } else {
+            pages_on_node[nodes[i]]++;
+        }
+    }
+
+    for (size_t i = 0; i < (size_t)max_node_id + 1; i++) {
+        if (pages_on_node[i] > 0) {
+            char buffer[1024];
+            snprintf(buffer, sizeof(buffer), "Node%zd", i);
+            GTestAdapter::RecordProperty(buffer, pages_on_node[i]);
+        }
+    }
 }

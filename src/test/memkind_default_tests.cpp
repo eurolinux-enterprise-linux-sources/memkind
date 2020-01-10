@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2014 - 2016 Intel Corporation.
+ * Copyright (C) 2014 - 2017 Intel Corporation.
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -22,15 +22,14 @@
  * ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
+#include "memkind.h"
+
 #include <numa.h>
 #include <stdio.h>
 
 #include "common.h"
-#include "memkind.h"
 
-/* Calling the basic APIs (calloc, realloc and get_size) with
- * MEMKIND_DEFAULT kind.
- */
+/* Calling the basic APIs with MEMKIND_DEFAULT kind. */
 class MemkindDefaultTests: public :: testing::Test
 {
 
@@ -43,7 +42,7 @@ protected:
 
 };
 
-TEST_F(MemkindDefaultTests, TC_Memkind_DefaultCalloc)
+TEST_F(MemkindDefaultTests, test_TC_MEMKIND_DefaultCalloc)
 {
     const size_t size = 1024;
     const size_t num = 1;
@@ -58,26 +57,7 @@ TEST_F(MemkindDefaultTests, TC_Memkind_DefaultCalloc)
     memkind_free(MEMKIND_DEFAULT, default_str);
 }
 
-TEST_F(MemkindDefaultTests, TC_Memkind_DefaultGetSize)
-{
-    const size_t size = 512;
-    char *default_str = NULL;
-    int err = 0;
-    size_t *total, *free;
-    total = (size_t*) malloc(sizeof(size_t));
-    free = (size_t*) malloc(sizeof(size_t));
-
-    default_str = (char *)memkind_malloc(MEMKIND_DEFAULT, size);
-    EXPECT_TRUE(NULL != default_str);
-
-    err = memkind_get_size(MEMKIND_DEFAULT, total, free);
-
-    EXPECT_EQ(0,err);
-
-    memkind_free(MEMKIND_DEFAULT, default_str);
-}
-
-TEST_F(MemkindDefaultTests, TC_Memkind_DefaultRealloc)
+TEST_F(MemkindDefaultTests, test_TC_MEMKIND_DefaultRealloc)
 {
     const size_t size1 = 512;
     const size_t size2 = 1024;

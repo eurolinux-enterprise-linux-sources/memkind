@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2015 - 2016 Intel Corporation.
+ * Copyright (C) 2015 - 2017 Intel Corporation.
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -22,9 +22,11 @@
  * ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
+#include <chrono>
 #include "common.h"
 #include "allocator_perf_tool/Configuration.hpp"
 #include "allocator_perf_tool/StressIncreaseToMax.h"
+#include "allocator_perf_tool/HugePageOrganizer.hpp"
 
 //memkind stress and longevity tests using Allocatr Perf Tool.
 class AllocateToMaxStressTests: public :: testing::Test
@@ -37,15 +39,50 @@ protected:
     void TearDown()
     {}
 
+    //Allocates memory up to 'memory_request_limit'.
+    void run(unsigned kind, unsigned operations, unsigned size_from, unsigned size_to, size_t memory_request_limit)
+    {
+        RecordProperty("kind", AllocatorTypes::allocator_name(kind));
+        RecordProperty("memory_operations", operations);
+        RecordProperty("size_from", size_from);
+        RecordProperty("size_to", size_to);
+
+        TaskConf task_conf = {
+            .n = operations, //number of memory operations
+            .allocation_sizes_conf = {
+                operations, //number of memory operations
+                size_from, //no random sizes.
+                size_to
+            },
+            .func_calls = TypesConf(FunctionCalls::MALLOC), //enable allocator function call
+            .allocators_types = TypesConf(kind), //enable allocator
+            .seed = 11 //random seed
+        };
+
+        std::chrono::time_point<std::chrono::system_clock> start, end;
+        start = std::chrono::system_clock::now();
+
+        //Execute test iterations.
+        std::vector<iteration_result> results = StressIncreaseToMax::execute_test_iterations(task_conf, 120, memory_request_limit);
+
+        end = std::chrono::system_clock::now();
+
+        std::chrono::duration<double> elapsed_time = end - start;
+
+        RecordProperty("elapsed_time", elapsed_time.count());
+
+        //Check finish status.
+        EXPECT_EQ(check_allocation_errors(results, task_conf), 0);
+    }
+
     //Check true allocation errors over all iterations.
     //Return iteration number (>0) when error occurs, or zero
     int check_allocation_errors(std::vector<iteration_result>& results, const TaskConf& task_conf)
     {
         for (size_t i=0; i<results.size(); i++)
         {
-            //Check if test ends with allocation error when reserved unallocated limit is enabled.
-           if(results[i].is_allocation_error
-                && task_conf.allocation_sizes_conf.reserved_unallocated)
+            //Check if test ends with allocation error.
+           if(results[i].is_allocation_error)
            {
                 return i+1;
            }
@@ -54,90 +91,31 @@ protected:
         return 0;
     }
 
+private:
+    HugePageOrganizer huge_page_organizer = HugePageOrganizer(4500);
 };
 
-//Allocate memory to max using MEMKIND_HBW kind.
-//NOTE: Allocated memory is limited (allocated_memory = total_free - reserved_unallocated).
-TEST_F(AllocateToMaxStressTests, TC_ALLOCATE_TO_MAX_MEMKIND_HBW)
+TEST_F(AllocateToMaxStressTests, test_TC_MEMKIND_slts_ALLOCATE_TO_MAX_MEMKIND_HBW)
 {
-    unsigned allocator_id = AllocatorTypes::MEMKIND_HBW;
-    RecordProperty("kind", AllocatorTypes::allocator_name(allocator_id));
-
-    unsigned operations = 10000;
-    unsigned size = 2048;
-    RecordProperty("memory_operations", operations);
-    RecordProperty("size", size);
-
-    TaskConf task_conf = {
-        operations, //number of memory operations
-        {
-            operations, //number of memory operations
-            15, //reserved unallocated
-            size, //no random sizes.
-            size
-        },
-        TypesConf(FunctionCalls::MALLOC), //enable allocator function call
-        TypesConf(allocator_id), //enable allocator
-        11, //random seed
-        false, //disable csv logging
-        true //check memory availability
-    };
-
-    TimerSysTime timer;
-    timer.start();
-
-    //Execute test iterations.
-    std::vector<iteration_result> results = StressIncreaseToMax::execute_test_iterations(task_conf, 1);
-
-    float elapsed_time = timer.getElapsedTime();
-    RecordProperty("elapsed_time", elapsed_time);
-
-    //Check if the execution time is greater than minimum.
-    EXPECT_GE(elapsed_time, 1.0);
-
-    //Check finish status.
-    EXPECT_EQ(check_allocation_errors(results, task_conf), 0);
+    run(AllocatorTypes::MEMKIND_HBW, 1024, MB, MB, GB);
 }
 
-//Allocate memory to max using MEMKIND_INTERLEAVE kind.
-//NOTE: Allocated memory is limited (allocated_memory = total_free - reserved_unallocated).
-TEST_F(AllocateToMaxStressTests, TC_ALLOCATE_TO_MAX_MEMKIND_INTERLEAVE)
+TEST_F(AllocateToMaxStressTests, test_TC_MEMKIND_slts_ALLOCATE_TO_MAX_MEMKIND_INTERLEAVE)
 {
-    unsigned allocator_id = AllocatorTypes::MEMKIND_INTERLEAVE;
-    RecordProperty("kind", AllocatorTypes::allocator_name(allocator_id));
+    run(AllocatorTypes::MEMKIND_INTERLEAVE, 4096, MB, MB, 4*GB);
+}
 
-    unsigned operations = 1000;
-    unsigned size = 1048576; //1MB
-    RecordProperty("memory_operations", operations);
-    RecordProperty("size", size);
+TEST_F(AllocateToMaxStressTests, test_TC_MEMKIND_slts_ALLOCATE_TO_MAX_MEMKIND_HBW_PREFERRED)
+{
+    run(AllocatorTypes::MEMKIND_HBW_PREFERRED, 17408, MB, MB, 17*GB);
+}
 
-    TaskConf task_conf = {
-        operations, //number of memory operations
-        {
-            operations, //number of memory operations
-            15000, //reserved unallocated (MB)
-            size, //no random sizes.
-            size
-        },
-        TypesConf(FunctionCalls::MALLOC), //enable allocator function call
-        TypesConf(allocator_id), //enable allocator
-        11, //random seed
-        false, //disable csv logging
-        true //check memory availability
-    };
+TEST_F(AllocateToMaxStressTests, test_TC_MEMKIND_2MBPages_slts_ALLOCATE_TO_MAX_MEMKIND_HBW_HUGETLB)
+{
+    run(AllocatorTypes::MEMKIND_HBW_HUGETLB, 1024, 4*MB, 4*MB, GB);
+}
 
-    TimerSysTime timer;
-    timer.start();
-
-    //Execute test iterations.
-    std::vector<iteration_result> results = StressIncreaseToMax::execute_test_iterations(task_conf, 1);
-
-    float elapsed_time = timer.getElapsedTime();
-    RecordProperty("elapsed_time", elapsed_time);
-
-    //Check if the execution time is greater than minimum.
-    EXPECT_GE(elapsed_time, 1.0);
-
-    //Check finish status.
-    EXPECT_EQ(check_allocation_errors(results, task_conf), 0);
+TEST_F(AllocateToMaxStressTests, test_TC_MEMKIND_slts_ALLOCATE_TO_MAX_DIFFERENT_SIZES)
+{
+    run(AllocatorTypes::MEMKIND_HBW, 2500, 1, 8*MB, GB);
 }

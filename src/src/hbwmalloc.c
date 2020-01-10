@@ -22,136 +22,45 @@
  * ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
+#include <hbwmalloc.h>
+#include <memkind.h>
+#include <memkind/internal/memkind_private.h>
+#include <memkind/internal/memkind_hbw.h>
+
 #include <stdlib.h>
 #include <stdio.h>
 #include <pthread.h>
 #include <errno.h>
-
-#include <hbwmalloc.h>
-#include <memkind.h>
-
-#include <memkind/internal/memkind_private.h>
+#include <numa.h>
+#include <numaif.h>
+#include <unistd.h>
+#include <stdint.h>
 
 static hbw_policy_t hbw_policy_g = HBW_POLICY_PREFERRED;
 static pthread_once_t hbw_policy_once_g = PTHREAD_ONCE_INIT;
-static inline memkind_t hbw_get_kind(int pagesize);
-static inline void hbw_policy_preferred_init(void);
-static inline void hbw_policy_bind_init(void);
-static inline void hbw_policy_interleave_init(void);
 
-hbw_policy_t hbw_get_policy(void)
+static void hbw_policy_bind_init(void)
 {
-    return hbw_policy_g;
+    hbw_policy_g = HBW_POLICY_BIND;
 }
 
-int hbw_set_policy(hbw_policy_t mode)
+static void hbw_policy_preferred_init(void)
 {
-    if (mode == HBW_POLICY_PREFERRED) {
-        pthread_once(&hbw_policy_once_g, hbw_policy_preferred_init);
-    }
-    else if (mode == HBW_POLICY_BIND) {
-        pthread_once(&hbw_policy_once_g, hbw_policy_bind_init);
-    }
-    else if (mode == HBW_POLICY_INTERLEAVE) {
-        pthread_once(&hbw_policy_once_g, hbw_policy_interleave_init);
-    }
-    else {
-        return EINVAL;
-    }
-
-    if (mode != hbw_policy_g) {
-        return EPERM;
-    }
-
-    return 0;
+    hbw_policy_g = HBW_POLICY_PREFERRED;
 }
 
-int hbw_check_available(void)
+static void hbw_policy_interleave_init(void)
 {
-    int result = memkind_check_available(MEMKIND_HBW);
-
-    switch (result) {
-        case 0:
-            return 0;
-
-        default:
-            return ENODEV;
-    }
+    hbw_policy_g = HBW_POLICY_INTERLEAVE;
 }
 
-void *hbw_malloc(size_t size)
-{
-    memkind_t kind;
-
-    kind = hbw_get_kind(HBW_PAGESIZE_4KB);
-    return memkind_malloc(kind, size);
-}
-
-void *hbw_calloc(size_t num, size_t size)
-{
-    memkind_t kind;
-
-    kind = hbw_get_kind(HBW_PAGESIZE_4KB);
-    return memkind_calloc(kind, num, size);
-}
-
-int hbw_posix_memalign(void **memptr, size_t alignment, size_t size)
-{
-    memkind_t kind;
-
-    kind = hbw_get_kind(HBW_PAGESIZE_4KB);
-    return memkind_posix_memalign(kind, memptr, alignment, size);
-}
-
-int hbw_posix_memalign_psize(void **memptr, size_t alignment, size_t size,
-                             hbw_pagesize_t pagesize)
-{
-    memkind_t kind;
-    int err = 0;
-
-    kind = hbw_get_kind(pagesize);
-    if (pagesize == HBW_PAGESIZE_1GB_STRICT &&
-        size % 1073741824) {
-        err = EINVAL;
-    }
-    if (!err) {
-        err = memkind_posix_memalign(kind, memptr, alignment, size);
-    }
-    return err;
-}
-
-void *hbw_realloc(void *ptr, size_t size)
-{
-    int i;
-    memkind_t kind;
-    memkind_t gbtlb_kinds[3] = {MEMKIND_HBW_GBTLB, MEMKIND_HBW_PREFERRED_GBTLB, MEMKIND_GBTLB};
-
-    for (i = 0; i < 3; i++) {
-        kind = gbtlb_kinds[i];
-        if (kind->ops->check_addr(kind, ptr) == 0) {
-            i = -1;
-            break;
-        }
-    }
-    if (i != -1) {
-        kind = hbw_get_kind(HBW_PAGESIZE_4KB);
-    }
-    return memkind_realloc(kind, ptr, size);
-}
-
-void hbw_free(void *ptr)
-{
-    memkind_free(0, ptr);
-}
-
-static inline memkind_t hbw_get_kind(int pagesize)
+// This function is intended to be called once per pagesize
+// Getting kind should be done using hbw_get_kind() defined below
+static memkind_t hbw_choose_kind(hbw_pagesize_t pagesize)
 {
     memkind_t result = NULL;
 
-    if(hbw_policy_once_g == PTHREAD_ONCE_INIT) {
-        //hbw_policy_g is statically initialized
-        hbw_set_policy(hbw_policy_g);
-    }
+    hbw_set_policy(hbw_policy_g);
 
     int policy = hbw_get_policy();
 
@@ -205,18 +114,159 @@ static inline memkind_t hbw_get_kind(int pagesize)
     return result;
 }
 
-
-static inline void hbw_policy_bind_init(void)
+static memkind_t pagesize_kind[HBW_PAGESIZE_MAX_VALUE];
+static inline memkind_t hbw_get_kind(hbw_pagesize_t pagesize)
 {
-    hbw_policy_g = HBW_POLICY_BIND;
+    if(pagesize_kind[pagesize] == NULL)
+    {
+        pagesize_kind[pagesize] = hbw_choose_kind(pagesize);
+    }
+    return pagesize_kind[pagesize];
 }
 
-static inline void hbw_policy_preferred_init(void)
+
+MEMKIND_EXPORT hbw_policy_t hbw_get_policy(void)
 {
-    hbw_policy_g = HBW_POLICY_PREFERRED;
+    return hbw_policy_g;
 }
 
-static inline void hbw_policy_interleave_init(void)
+MEMKIND_EXPORT int hbw_set_policy(hbw_policy_t mode)
 {
-    hbw_policy_g = HBW_POLICY_INTERLEAVE;
+    switch(mode) {
+        case HBW_POLICY_PREFERRED:
+            pthread_once(&hbw_policy_once_g, hbw_policy_preferred_init);
+            break;
+        case HBW_POLICY_BIND:
+            pthread_once(&hbw_policy_once_g, hbw_policy_bind_init);
+            break;
+        case HBW_POLICY_INTERLEAVE:
+            pthread_once(&hbw_policy_once_g, hbw_policy_interleave_init);
+            break;
+        default:
+             return EINVAL;
+    }
+
+    if (mode != hbw_policy_g) {
+        return EPERM;
+    }
+
+    return 0;
+}
+
+MEMKIND_EXPORT int hbw_check_available(void)
+{
+    return  (memkind_check_available(MEMKIND_HBW) == 0) ? 0 : ENODEV;
+}
+
+static inline void hbw_touch_page(void* addr)
+{
+    volatile char* temp_ptr = (volatile char*) addr;
+    char value = temp_ptr[0];
+    temp_ptr[0] = value;
+}
+
+MEMKIND_EXPORT int hbw_verify_memory_region(void* addr, size_t size, int flags)
+{
+    /*
+     * if size is invalid, flags have unsupported bit set or if addr is NULL.
+     */
+    if (addr == NULL || size == 0 || flags & ~HBW_TOUCH_PAGES) {
+        return EINVAL;
+    }
+
+    /*
+     * 4KB is the smallest pagesize. When pagesize is bigger, pages are verified more than once
+     */
+    const size_t page_size = sysconf(_SC_PAGESIZE);
+    const size_t page_mask = ~(page_size-1);
+
+    /*
+     * block size should be power of two to enable compiler optimizations
+     */
+    const unsigned block_size = 64;
+
+    char *end = addr + size;
+    char *aligned_beg = (char*)((uintptr_t)addr & page_mask);
+    nodemask_t nodemask;
+    struct bitmask expected_nodemask = {NUMA_NUM_NODES, nodemask.n};
+
+    memkind_hbw_all_get_mbind_nodemask(NULL, expected_nodemask.maskp, expected_nodemask.size);
+
+    while(aligned_beg < end) {
+        int nodes[block_size];
+        void* pages[block_size];
+        int i = 0, page_count = 0;
+        char *iter_end = aligned_beg + block_size*page_size;
+
+        if (iter_end > end) {
+            iter_end = end;
+        }
+
+        while (aligned_beg < iter_end) {
+            if (flags & HBW_TOUCH_PAGES) {
+                hbw_touch_page(aligned_beg);
+            }
+            pages[page_count++] = aligned_beg;
+            aligned_beg += page_size;
+        }
+
+        if (move_pages(0, page_count, pages, NULL, nodes, MPOL_MF_MOVE)) {
+            return EFAULT;
+        }
+
+        for (i = 0; i < page_count; i++) {
+            /*
+             * negative value of nodes[i] indicates that move_pages could not establish
+             * page location, e.g. addr is not pointing to valid virtual mapping
+             */
+            if(nodes[i] < 0) {
+                return -1;
+            }
+            /*
+             * if nodes[i] is not present in expected_nodemask then
+             * physical memory backing page is not hbw
+             */
+            if (!numa_bitmask_isbitset(&expected_nodemask, nodes[i])) {
+                return -1;
+            }
+        }
+    }
+
+    return 0;
+}
+
+MEMKIND_EXPORT void *hbw_malloc(size_t size)
+{
+    return memkind_malloc(hbw_get_kind(HBW_PAGESIZE_4KB), size);
+}
+
+MEMKIND_EXPORT void *hbw_calloc(size_t num, size_t size)
+{
+    return memkind_calloc(hbw_get_kind(HBW_PAGESIZE_4KB), num, size);
+}
+
+MEMKIND_EXPORT int hbw_posix_memalign(void **memptr, size_t alignment, size_t size)
+{
+    return memkind_posix_memalign(hbw_get_kind(HBW_PAGESIZE_4KB), memptr, alignment, size);
+}
+
+MEMKIND_EXPORT int hbw_posix_memalign_psize(void **memptr, size_t alignment, size_t size,
+                             hbw_pagesize_t pagesize)
+{
+    if (pagesize == HBW_PAGESIZE_1GB_STRICT &&
+        size % (1 << 30)) {
+        return EINVAL;
+    }
+
+    return memkind_posix_memalign(hbw_get_kind(pagesize), memptr, alignment, size);
+}
+
+MEMKIND_EXPORT void *hbw_realloc(void *ptr, size_t size)
+{
+    return memkind_realloc(hbw_get_kind(HBW_PAGESIZE_4KB), ptr, size);
+}
+
+MEMKIND_EXPORT void hbw_free(void *ptr)
+{
+    memkind_free(0, ptr);
 }
